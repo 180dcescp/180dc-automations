@@ -1,0 +1,79 @@
+name: Weekly Analytics Report
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual triggering
+    inputs:
+      test_mode:
+        description: 'Run in test mode (check connection only)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  analytics-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: automation/package-lock.json
+          
+      - name: Install dependencies
+        run: |
+          cd automation
+          npm ci
+          
+      - name: Install Google Analytics dependencies
+        run: |
+          cd automation
+          npm install @google-analytics/data
+          
+      - name: Run weekly analytics report
+        env:
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
+          GOOGLE_ANALYTICS_ID: ${{ secrets.GOOGLE_ANALYTICS_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          cd automation
+          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+            node weekly-analytics-report.js test
+          else
+            node weekly-analytics-report.js
+          fi
+          
+      - name: Send Slack notification on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "❌ Weekly Analytics Report Failed",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "❌ *Weekly Analytics Report Failed*\n\n🚨 *Error:* Failed to generate weekly analytics report\n📊 *Service:* Google Analytics\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi

@@ -1,0 +1,84 @@
+name: Deploy Read.ai Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'automation/worker.js'
+      - 'automation/wrangler-worker.toml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: automation/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd automation
+          npm install
+
+      - name: Deploy Read.ai Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd automation
+          npx wrangler deploy --config wrangler-worker.toml
+
+      - name: Send Slack notification on success
+        if: success()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "✅ Read.ai Worker Deployed Successfully",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "✅ *Read.ai Worker Deployed Successfully*\n\n🤖 *Service:* readai-to-notion\n🌐 *Platform:* Cloudflare Workers\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi
+
+      - name: Send Slack notification on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "❌ Read.ai Worker Deployment Failed",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "❌ *Read.ai Worker Deployment Failed*\n\n🚨 *Error:* Read.ai worker deployment failed\n🌐 *Platform:* Cloudflare Workers\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi

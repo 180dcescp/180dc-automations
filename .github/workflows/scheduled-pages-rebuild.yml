@@ -1,0 +1,72 @@
+name: Scheduled Cloudflare Pages Rebuild
+
+on:
+  schedule:
+    # Every 6 hours; adjust as needed
+    - cron: '0 */6 * * *'
+  # Allow manual runs from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  trigger-rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cloudflare Pages build hook
+        run: |
+          if [ -z "${{ secrets.CF_PAGES_BUILD_HOOK_URL }}" ]; then
+            echo "CF_PAGES_BUILD_HOOK_URL is not set. Add it in GitHub → Settings → Secrets and variables → Actions";
+            exit 1;
+          fi
+          curl -fsS -X POST "${{ secrets.CF_PAGES_BUILD_HOOK_URL }}"
+
+      - name: Send Slack notification on success
+        if: success()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "✅ Cloudflare Pages Rebuild Triggered",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "✅ *Cloudflare Pages Rebuild Triggered*\n\n📊 *Summary:* Scheduled rebuild of Cloudflare Pages completed successfully\n🌐 *Platform:* Cloudflare Pages\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi
+
+      - name: Send Slack notification on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "❌ Cloudflare Pages Rebuild Failed",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "❌ *Cloudflare Pages Rebuild Failed*\n\n🚨 *Error:* Failed to trigger Cloudflare Pages rebuild\n🌐 *Platform:* Cloudflare Pages\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi
+
+

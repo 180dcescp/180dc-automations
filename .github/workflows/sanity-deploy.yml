@@ -1,0 +1,95 @@
+name: Deploy Sanity Studio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'studio-180dc-escp-website/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: studio-180dc-escp-website
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: studio-180dc-escp-website/package-lock.json
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Create Studio tsconfig if missing
+        run: |
+          if [ ! -f tsconfig.json ]; then echo '{"compilerOptions":{"target":"ES2020","module":"ESNext","moduleResolution":"Bundler","jsx":"react-jsx","strict":true}}' > tsconfig.json; fi
+
+      - name: Deploy Studio (non-interactive)
+        env:
+          SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
+        run: |
+          if [ -z "$SANITY_AUTH_TOKEN" ]; then
+            echo "SANITY_AUTH_TOKEN is not set. Add it in GitHub > Settings > Secrets and variables > Actions";
+            exit 1;
+          fi
+          # Try passing hostname as an argument (preferred)
+          SANITY_AUTH_TOKEN=$SANITY_AUTH_TOKEN npx sanity@latest deploy escp180dc --yes || \
+          # Fallback: pipe hostname if the CLI still prompts
+          printf "escp180dc\n" | SANITY_AUTH_TOKEN=$SANITY_AUTH_TOKEN npx sanity@latest deploy --yes
+
+      - name: Send Slack notification on success
+        if: success()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "✅ Sanity Studio Deployed Successfully",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "✅ *Sanity Studio Deployed Successfully*\n\n📊 *Summary:* Sanity Studio deployment completed successfully\n🌐 *Platform:* Sanity Cloud\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi
+
+      - name: Send Slack notification on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "❌ Sanity Studio Deployment Failed",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "❌ *Sanity Studio Deployment Failed*\n\n🚨 *Error:* Sanity Studio deployment failed\n🌐 *Platform:* Sanity Cloud\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi
+
+

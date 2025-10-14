@@ -1,0 +1,74 @@
+name: Notion Member Database Sync
+
+on:
+  schedule:
+    # Run every day at 4 AM UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (test mode)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  sync-members:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: automation/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd automation
+          npm ci
+
+      - name: Run Notion Member Sync
+        env:
+          GSHEET_MEMBERS_LINK: ${{ secrets.GSHEET_MEMBERS_LINK }}
+          GOOGLE_PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
+          GOOGLE_PRIVATE_KEY_ID: ${{ secrets.GOOGLE_PRIVATE_KEY_ID }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_MEMBER_DATABASE: ${{ secrets.NOTION_MEMBER_DATABASE }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          cd automation
+          node notion-member-sync.js
+
+      - name: Send Slack notification on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+        run: |
+          if [ -n "$SLACK_BOT_TOKEN" ] && [ -n "$SLACK_CHANNEL" ]; then
+            curl -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                 -H "Content-Type: application/json" \
+                 -d '{
+                   "channel": "'"$SLACK_CHANNEL"'",
+                   "text": "❌ Notion Member Sync Failed",
+                   "blocks": [
+                     {
+                       "type": "section",
+                       "text": {
+                         "type": "mrkdwn",
+                         "text": "❌ *Notion Member Sync Failed*\n\n🚨 *Error:* The daily sync of member data to Notion has failed.\n\n🔧 *Action Required:* Check the GitHub Actions logs for details and ensure all secrets are properly configured.\n\n⏰ *Time:* '"$(date)"'"
+                       }
+                     }
+                   ]
+                 }' \
+                 https://slack.com/api/chat.postMessage
+          fi
