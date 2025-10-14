@@ -1,12 +1,12 @@
-name = "180dc-read-ai-webhook"
+name = "180dc-scheduled-rebuild"
 main = "worker.js"
 compatibility_date = "2024-01-15"
 
 [env.production]
-name = "180dc-read-ai-webhook"
+name = "180dc-scheduled-rebuild"
 
 [env.staging]
-name = "180dc-read-ai-webhook-staging"
+name = "180dc-scheduled-rebuild-staging"
 
 # Environment variables (set via wrangler secret put)
 # NOTION_TOKEN - Your Notion integration token
@@ -31,9 +31,10 @@ command = ""
 # binding = "MEETING_FILES"
 # bucket_name = "meeting-files"
 
-# Cron triggers (if needed for scheduled tasks)
-# [[triggers]]
-# crons = ["0 9 * * MON"]  # Every Monday at 9 AM
+# Cron triggers
+[[triggers]]
+# Default: Rebuild every day at 06:00 UTC
+crons = ["0 6 * * *"]
 
 # Limits
 [limits]

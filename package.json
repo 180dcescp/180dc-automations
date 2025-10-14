@@ -1,41 +1,17 @@
 {
   "name": "180dc-automation",
   "version": "1.0.0",
-  "description": "Automation scripts for syncing Google Sheets and Slack with Sanity CMS",
+  "description": "Cloudflare Worker to trigger scheduled website rebuilds",
   "type": "module",
+  # Keep only dev/deploy and health test
   "scripts": {
-    "sync": "node scripts/sync-team-members.js",
-    "sync-clients": "node scripts/sync-clients.js",
-    "sync-drive-transcripts": "node scripts/sync-drive-transcripts.js",
-    "test": "node tools/test-connections.js",
-    "test-colors": "node tools/test-color-analysis.js",
-    "test-avif": "node tools/test-avif-conversion.js",
-    "test-failed-logos": "node tools/test-failed-logos.js",
-    "test-team-avatar-avif": "node tools/test-team-avatar-avif.js",
-    "analytics": "node scripts/weekly-analytics-report.js",
-    "test-analytics": "node scripts/weekly-analytics-report.js test",
-    "slack-usergroups": "node scripts/slack-usergroups-sync.js",
-    "slack-titles": "node scripts/slack-titles-sync.js",
-    "notion-members": "node scripts/notion-member-sync.js",
-    "notion-clients": "node scripts/notion-client-sync.js",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",
-    "test-webhook": "curl -X GET https://180dc-read-ai-webhook.your-subdomain.workers.dev/test/webhook",
-    "test-notion": "curl -X GET https://180dc-read-ai-webhook.your-subdomain.workers.dev/test/notion",
-    "test-health": "curl -X GET https://180dc-read-ai-webhook.your-subdomain.workers.dev/health"
+    "test-health": "curl -X GET https://180dc-scheduled-rebuild.your-subdomain.workers.dev/health"
   },
-  "dependencies": {
-    "@google-analytics/data": "^4.0.0",
-    "@sanity/client": "^6.10.0",
-    "@slack/web-api": "^6.10.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "googleapis": "^128.0.0",
-    "sharp": "^0.33.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.10.0",
     "wrangler": "^4.42.2"
