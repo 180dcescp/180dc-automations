@@ -11,9 +11,9 @@
  * @since 2024-01-01
  */
 
-import SanityClient from './sanity-client.js';
-import SlackClient from './slack-client.js';
-import SlackNotificationManager from './slack-notifications.js';
+import SanityClient from '../lib/clients/sanity-client.js';
+import SlackClient from '../lib/clients/slack-client.js';
+import SlackNotificationManager from '../lib/utils/slack-notifications.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

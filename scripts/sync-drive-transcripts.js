@@ -14,8 +14,8 @@
 
 import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
-import NotionClient from './notion-client.js';
-import SlackNotificationManager from './slack-notifications.js';
+import NotionClient from '../lib/clients/notion-client.js';
+import SlackNotificationManager from '../lib/utils/slack-notifications.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

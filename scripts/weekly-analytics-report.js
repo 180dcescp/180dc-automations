@@ -10,8 +10,8 @@
  * @since 2024-01-01
  */
 
-import GoogleAnalyticsClient from './google-analytics-client.js';
-import SlackNotificationManager from './slack-notifications.js';
+import GoogleAnalyticsClient from '../lib/clients/google-analytics-client.js';
+import SlackNotificationManager from '../lib/utils/slack-notifications.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

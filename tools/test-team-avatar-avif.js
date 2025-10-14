@@ -5,8 +5,8 @@
  * Tests the system's ability to handle and notify about failed avatar conversions
  */
 
-import SanityClient from './sanity-client.js';
-import SlackNotificationManager from './slack-notifications.js';
+import SanityClient from '../lib/clients/sanity-client.js';
+import SlackNotificationManager from '../lib/utils/slack-notifications.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
