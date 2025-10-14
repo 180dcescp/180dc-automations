@@ -1,0 +1,11 @@
+name = "readai-to-notion"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Enable comprehensive logging
+[observability]
+enabled = true
+
+# Environment variables (set via wrangler secret put)
+[vars]
+# NOTION_TOKEN and MEETING_DATABASE_ID will be set as secrets

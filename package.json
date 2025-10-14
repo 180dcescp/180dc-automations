@@ -1,0 +1,39 @@
+{
+  "name": "180dc-automation",
+  "version": "1.0.0",
+  "description": "Automation scripts for syncing Google Sheets and Slack with Sanity CMS",
+  "type": "module",
+  "scripts": {
+    "sync": "node sync-team-members.js",
+    "sync-clients": "node sync-clients.js",
+    "sync-drive-transcripts": "node sync-drive-transcripts.js",
+    "test": "node test-connections.js",
+    "test-colors": "node test-color-analysis.js",
+    "test-avif": "node test-avif-conversion.js",
+    "test-failed-logos": "node test-failed-logos.js",
+    "test-team-avatar-avif": "node test-team-avatar-avif.js",
+    "webhook": "node webhook-server.js",
+    "test-webhook": "node read-ai-webhook.js test-webhook",
+    "test-notion": "node read-ai-webhook.js test-connection",
+    "analytics": "node weekly-analytics-report.js",
+    "test-analytics": "node weekly-analytics-report.js test",
+    "slack-usergroups": "node slack-usergroups-sync.js",
+    "slack-titles": "node slack-titles-sync.js",
+    "notion-members": "node notion-member-sync.js",
+    "notion-clients": "node notion-client-sync.js"
+  },
+  "dependencies": {
+    "@google-analytics/data": "^4.0.0",
+    "@sanity/client": "^6.10.0",
+    "@slack/web-api": "^6.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "googleapis": "^128.0.0",
+    "sharp": "^0.33.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "wrangler": "^4.42.2"
+  }
+}
