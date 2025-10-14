@@ -30,9 +30,9 @@ wrangler login
 ```
 
 ### 4. Set Required Secret
-Set the webhook URL used to trigger your website rebuild (e.g., Vercel, Netlify, or your CI):
+Set the webhook URL used to trigger your website rebuild (Cloudflare Pages Build Hook):
 ```bash
-wrangler secret put REBUILD_WEBHOOK_URL
+wrangler secret put CF_PAGES_BUILD_HOOK_URL
 ```
 
 ### 5. Deploy the Worker
@@ -60,5 +60,5 @@ curl -X POST https://180dc-scheduled-rebuild.your-subdomain.workers.dev/rebuild
 ```
 
 ## Notes
-- Ensure `REBUILD_WEBHOOK_URL` is a secure, secret URL provided by your platform.
+- Ensure `CF_PAGES_BUILD_HOOK_URL` is a secure, secret URL provided by your platform.
 - Monitor logs with `wrangler tail` to confirm scheduled runs.

@@ -3,7 +3,7 @@
  * Triggers a rebuild by calling a build webhook URL on a cron schedule.
  *
  * Required secret:
- * - REBUILD_WEBHOOK_URL: The URL to POST to in order to trigger a website rebuild
+ * - CF_PAGES_BUILD_HOOK_URL: The URL to POST to in order to trigger a website rebuild (Cloudflare Pages build hook)
  */
 
 async function handleHealth() {
@@ -21,10 +21,10 @@ async function handleHealth() {
 }
 
 async function triggerRebuild(env) {
-  const webhookUrl = env.REBUILD_WEBHOOK_URL;
+  const webhookUrl = env.CF_PAGES_BUILD_HOOK_URL;
   if (!webhookUrl) {
-    console.warn('REBUILD_WEBHOOK_URL is not set. Skipping rebuild trigger.');
-    return { success: false, message: 'Missing REBUILD_WEBHOOK_URL' };
+    console.warn('CF_PAGES_BUILD_HOOK_URL is not set. Skipping rebuild trigger.');
+    return { success: false, message: 'Missing CF_PAGES_BUILD_HOOK_URL' };
   }
 
   const response = await fetch(webhookUrl, { method: 'POST' });

@@ -18,9 +18,9 @@ npm install
 ```
 
 ### 2. Set Required Secret
-Set the rebuild webhook URL as a Worker secret:
+Set the rebuild webhook URL (Cloudflare Pages Build Hook) as a Worker secret:
 ```bash
-wrangler secret put REBUILD_WEBHOOK_URL
+wrangler secret put CF_PAGES_BUILD_HOOK_URL
 ```
 
 ### 3. Deploy
@@ -44,7 +44,7 @@ Once deployed, the Worker provides:
 - `npm run test-health` - Test health endpoint
 
 ## 🔒 Environment Variables
-- `REBUILD_WEBHOOK_URL` - Secret URL to trigger your platform build
+- `CF_PAGES_BUILD_HOOK_URL` - Secret URL to trigger your Cloudflare Pages build
 
 ## 🚨 Troubleshooting
 ```bash
