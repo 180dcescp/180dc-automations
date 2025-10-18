@@ -6,6 +6,9 @@ on:
     paths:
       - 'automation/worker.js'
       - 'automation/wrangler-worker.toml'
+  workflow_dispatch:  # Manual trigger capability
+  schedule:
+    - cron: '0 0 * * *'  # Run every 24 hours at midnight UTC
 
 jobs:
   deploy:
