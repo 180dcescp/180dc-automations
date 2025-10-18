@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Cloudflare Worker to trigger scheduled website rebuilds",
   "type": "module",
-  # Keep only dev/deploy and health test
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
@@ -11,7 +10,14 @@
     "deploy:production": "wrangler deploy --env production",
     "test-health": "curl -X GET https://180dc-scheduled-rebuild.your-subdomain.workers.dev/health"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@google-analytics/data": "^4.5.0",
+    "@sanity/client": "^6.21.1",
+    "@slack/web-api": "^7.4.0",
+    "dotenv": "^16.4.5",
+    "googleapis": "^144.0.0",
+    "sharp": "^0.33.4"
+  },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "wrangler": "^4.42.2"

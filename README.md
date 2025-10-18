@@ -2,7 +2,7 @@
 
 Minimal Cloudflare Worker that triggers a scheduled website rebuild via a webhook.
 
-## 🏗️ Project Structure
+## 🏗️ Project structure
 ```
 180dc-automations/
 ├── worker.js           # Cloudflare Worker for scheduled rebuilds
@@ -12,12 +12,12 @@ Minimal Cloudflare Worker that triggers a scheduled website rebuild via a webhoo
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### 1. Install dependencies
 ```bash
 npm install
 ```
 
-### 2. Set Required Secret
+### 2. Set required secret
 Set the rebuild webhook URL (Cloudflare Pages Build Hook) as a Worker secret:
 ```bash
 wrangler secret put CF_PAGES_BUILD_HOOK_URL
@@ -34,7 +34,9 @@ Once deployed, the Worker provides:
 - `POST /rebuild` - Manually trigger a rebuild
 
 ## 📚 Documentation
-- [Cloudflare Deployment Guide](./CLOUDFLARE-DEPLOYMENT.md)
+- Scripts: `scripts/README.md`
+- Libraries: `lib/README.md`
+- Tools: `tools/README.md`
 
 ## 🔧 Scripts
 - `npm run dev` - Start local dev server
@@ -43,7 +45,7 @@ Once deployed, the Worker provides:
 - `npm run deploy:production` - Deploy to production
 - `npm run test-health` - Test health endpoint
 
-## 🔒 Environment Variables
+## 🔒 Environment variables
 - `CF_PAGES_BUILD_HOOK_URL` - Secret URL to trigger your Cloudflare Pages build
 
 ## 🚨 Troubleshooting

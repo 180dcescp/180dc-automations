@@ -23,13 +23,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
-          cache-dependency-path: automation/package-lock.json
+          cache-dependency-path: package-lock.json
           
       - name: Install dependencies
         run: |
-          cd automation
           npm ci
           
       - name: Verify required secrets
@@ -68,11 +67,10 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
         run: |
-          cd automation
           if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
             echo "🧪 Running in test mode - checking connections only"
             node -e "
-              import('./sync-drive-transcripts.js').then(module => {
+              import('./scripts/sync-drive-transcripts.js').then(module => {
                 const sync = new module.default();
                 return sync.testConnections();
               }).then(() => {
@@ -84,7 +82,7 @@ jobs:
               });
             "
           else
-            node sync-drive-transcripts.js
+            node scripts/sync-drive-transcripts.js
           fi
           
       - name: Send Slack notification on failure

@@ -23,19 +23,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
-          cache-dependency-path: automation/package-lock.json
+          cache-dependency-path: package-lock.json
           
       - name: Install dependencies
         run: |
-          cd automation
           npm ci
-          
-      - name: Install Google Analytics dependencies
-        run: |
-          cd automation
-          npm install @google-analytics/data
           
       - name: Run weekly analytics report
         env:
@@ -46,11 +40,10 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
         run: |
-          cd automation
           if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
-            node weekly-analytics-report.js test
+            node scripts/weekly-analytics-report.js test
           else
-            node weekly-analytics-report.js
+            node scripts/weekly-analytics-report.js
           fi
           
       - name: Send Slack notification on failure

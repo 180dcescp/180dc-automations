@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'automation/worker.js'
-      - 'automation/wrangler-worker.toml'
+      - 'worker.js'
+      - 'wrangler.toml'
 
 jobs:
   deploy:
@@ -19,19 +19,17 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: automation/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: |
-          cd automation
-          npm install
+          npm ci
 
       - name: Deploy Read.ai Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          cd automation
-          npx wrangler deploy --config wrangler-worker.toml
+          npx wrangler deploy
 
       - name: Send Slack notification on success
         if: success()

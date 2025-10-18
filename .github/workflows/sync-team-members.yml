@@ -23,13 +23,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
-          cache-dependency-path: automation/package-lock.json
+          cache-dependency-path: package-lock.json
           
       - name: Install dependencies
         run: |
-          cd automation
           npm ci
           
       - name: Run team member sync
@@ -40,11 +39,10 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
         run: |
-          cd automation
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            node sync-team-members.js dry-run
+            node scripts/sync-team-members.js dry-run
           else
-            npm run sync
+            node scripts/sync-team-members.js
           fi
           
       - name: Commit and push changes (if any)
