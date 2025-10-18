@@ -14,8 +14,8 @@
 
 import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
-import NotionClient from '../lib/clients/notion-client.js';
-import SlackNotificationManager from '../lib/utils/slack-notifications.js';
+import { Client } from '@notionhq/client';
+import { WebClient } from '@slack/web-api';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -23,10 +23,19 @@ dotenv.config();
 class DriveTranscriptSync {
   constructor() {
     this.drive = google.drive({ version: 'v3' });
-    this.notion = new NotionClient();
-    this.slack = new SlackNotificationManager();
     this.driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     this.processedFiles = new Set();
+    
+    // Initialize Notion client
+    this.notion = new Client({
+      auth: process.env.NOTION_TOKEN,
+    });
+    this.databaseId = process.env.MEETING_DATABASE_ID;
+    
+    // Initialize Slack client
+    this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+    this.slackChannel = process.env.SLACK_CHANNEL || '#automation-updates';
+    this.slackEnabled = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL);
     
     // Validate required environment variables
     this.validateEnvironment();
@@ -142,7 +151,7 @@ class DriveTranscriptSync {
       
       if (newFiles.length === 0) {
         console.log('✅ No new transcript files to process');
-        await this.slack.notifyAutomationSuccess({
+        await this.notifyAutomationSuccess({
           script: 'Drive Transcript Sync',
           summary: 'No new transcript files found in Google Drive folder',
           results: { processed: 0, skipped: transcriptFiles.length },
@@ -155,7 +164,7 @@ class DriveTranscriptSync {
       const results = await this.processTranscriptFiles(newFiles);
       
       // Send success notification
-      await this.slack.notifyAutomationSuccess({
+      await this.notifyAutomationSuccess({
         script: 'Drive Transcript Sync',
         summary: `Processed ${results.processed} new transcript files from Google Drive`,
         results: results,
@@ -168,7 +177,7 @@ class DriveTranscriptSync {
       console.error('❌ Drive transcript sync failed:', error);
       
       // Send failure notification
-      await this.slack.notifyAutomationFailure({
+      await this.notifyAutomationFailure({
         script: 'Drive Transcript Sync',
         error: error,
         context: 'Failed to sync transcript files from Google Drive to Notion'
@@ -227,13 +236,13 @@ class DriveTranscriptSync {
     }
     
     // Test Notion connection
-    const notionConnected = await this.notion.testConnection();
+    const notionConnected = await this.testNotionConnection();
     if (!notionConnected) {
       throw new Error('Notion connection failed');
     }
     
     // Test Slack connection
-    const slackConnected = await this.slack.testConnection();
+    const slackConnected = await this.testSlackConnection();
     if (!slackConnected) {
       console.warn('⚠️ Slack connection failed - notifications may not work');
     }
@@ -798,6 +807,230 @@ class DriveTranscriptSync {
     
     // Default to Exec for all other meetings
     return 'Exec';
+  }
+
+  /**
+   * Test connection to Notion
+   */
+  async testNotionConnection() {
+    try {
+      const response = await this.notion.databases.retrieve({
+        database_id: this.databaseId
+      });
+      console.log('✅ Notion connection successful');
+      console.log(`📊 Database: ${response.title?.[0]?.plain_text || 'Unknown'}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Notion connection failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Test connection to Slack
+   */
+  async testSlackConnection() {
+    try {
+      const result = await this.slack.auth.test();
+      console.log('✅ Slack connection successful');
+      console.log(`Bot: ${result.user}`);
+      console.log(`Team: ${result.team}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Slack connection failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Get all meeting pages from Notion database
+   */
+  async getMeetingPages() {
+    try {
+      const response = await this.notion.databases.query({
+        database_id: this.databaseId,
+        page_size: 100
+      });
+      
+      return response.results;
+    } catch (error) {
+      console.error('Error fetching meeting pages from Notion:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new meeting page in Notion
+   */
+  async createMeetingPage(meetingData) {
+    try {
+      const response = await this.notion.pages.create({
+        parent: { database_id: this.databaseId },
+        properties: {
+          'Session ID': {
+            rich_text: [{ text: { content: meetingData.session_id } }]
+          },
+          'Title': {
+            title: [{ text: { content: meetingData.title } }]
+          },
+          'Start Time': {
+            date: { start: meetingData.start_time }
+          },
+          'End Time': {
+            date: { start: meetingData.end_time }
+          },
+          'Participants': {
+            rich_text: [{ text: { content: meetingData.participants.join(', ') } }]
+          },
+          'Owner': {
+            rich_text: [{ text: { content: meetingData.owner } }]
+          },
+          'Summary': {
+            rich_text: [{ text: { content: meetingData.summary } }]
+          },
+          'Action Items': {
+            rich_text: [{ text: { content: meetingData.action_items.join('\n') } }]
+          },
+          'Key Questions': {
+            rich_text: [{ text: { content: meetingData.key_questions.join('\n') } }]
+          },
+          'Topics': {
+            rich_text: [{ text: { content: meetingData.topics.join(', ') } }]
+          },
+          'Report URL': {
+            url: meetingData.report_url
+          },
+          'Transcript': {
+            rich_text: [{ text: { content: meetingData.transcript } }]
+          },
+          'Type': {
+            select: { name: meetingData.type }
+          },
+          'Comments': {
+            rich_text: [{ text: { content: meetingData.comments } }]
+          }
+        }
+      });
+
+      console.log(`✅ Created Notion page: ${meetingData.title}`);
+      return response;
+    } catch (error) {
+      console.error(`❌ Error creating Notion page:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send a notification for automation success
+   */
+  async notifyAutomationSuccess({ script, summary, results, duration }) {
+    if (!this.slackEnabled) return;
+
+    const durationText = duration ? ` (${Math.round(duration / 1000)}s)` : '';
+    let message = `✅ *${script} Completed Successfully*${durationText}\n\n`;
+    message += `📊 *Summary:* ${summary}\n\n`;
+    
+    if (results) {
+      message += `📈 *Results:*\n`;
+      if (results.processed) message += `• ✅ Processed: ${results.processed}\n`;
+      if (results.skipped) message += `• ⏭️ Skipped: ${results.skipped}\n`;
+      if (results.failed) message += `• ❌ Failed: ${results.failed}\n`;
+    }
+
+    message += `\n⏰ *Time:* ${new Date().toLocaleString()}`;
+
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: message
+        }
+      }
+    ];
+
+    await this.sendSlackMessage(message, blocks);
+  }
+
+  /**
+   * Send a notification for automation failure
+   */
+  async notifyAutomationFailure({ script, error, context }) {
+    if (!this.slackEnabled) return;
+
+    let message = `❌ *${script} Failed*\n\n`;
+    message += `🚨 *Error:* ${error.message}\n`;
+    
+    if (context) {
+      message += `📝 *Context:* ${context}\n`;
+    }
+
+    message += `\n⏰ *Time:* ${new Date().toLocaleString()}`;
+
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: message
+        }
+      }
+    ];
+
+    // Add error details in a code block
+    if (error.stack) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `\`\`\`\n${error.stack}\n\`\`\``
+        }
+      });
+    }
+
+    await this.sendSlackMessage(message, blocks);
+  }
+
+  /**
+   * Send a message to Slack
+   */
+  async sendSlackMessage(text, blocks = null) {
+    if (!this.slackEnabled) {
+      console.log('📱 Slack notification (disabled):', text);
+      return;
+    }
+
+    try {
+      const payload = {
+        channel: this.slackChannel,
+        text: text,
+        blocks: blocks,
+        unfurl_links: false,
+        unfurl_media: false
+      };
+
+      const response = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ Slack notification sent: ${result.ts}`);
+        return result;
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Failed to send Slack notification:', errorText);
+        throw new Error(`Slack API error: ${errorText}`);
+      }
+    } catch (error) {
+      console.error('❌ Error sending Slack notification:', error);
+      throw error;
+    }
   }
 }
 

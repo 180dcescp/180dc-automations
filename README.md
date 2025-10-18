@@ -35,7 +35,6 @@ Once deployed, the Worker provides:
 
 ## 📚 Documentation
 - Scripts: `scripts/README.md`
-- Libraries: `lib/README.md`
 - Tools: `tools/README.md`
 
 ## 🔧 Scripts

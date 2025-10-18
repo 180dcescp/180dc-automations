@@ -5,8 +5,6 @@ Small utilities for media validation and conversion.
 ## Utilities
 
 - `avif-converter.js` — Convert images to AVIF
-- `test-failed-logos.js` — Detect broken logo assets
-- `test-team-avatar-avif.js` — Check team avatars for AVIF availability
 
 ## Usage
 
