@@ -32,7 +32,7 @@ class SlackUsergroupsSync {
     
     // Configuration matching the original Google Apps Script
     this.config = {
-      SHEET_NAME: 'Members',
+      SHEET_NAME: 'Member Database',
       GROUP_PREFIX: '',
       
       // Column headers

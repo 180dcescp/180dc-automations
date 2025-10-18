@@ -130,11 +130,11 @@ class NotionMemberSync {
       
       // Find the sheet that matches our target name (case-insensitive)
       const targetSheet = sheets.find(sheet => 
-        sheet.properties?.title?.toLowerCase() === 'members'
+        sheet.properties?.title?.toLowerCase() === 'member database'
       );
       
       if (!targetSheet) {
-        throw new Error(`Sheet "Members" not found. Available sheets: ${sheets.map(s => s.properties?.title).join(', ')}`);
+        throw new Error(`Sheet "Member Database" not found. Available sheets: ${sheets.map(s => s.properties?.title).join(', ')}`);
       }
       
       const actualSheetName = targetSheet.properties.title;

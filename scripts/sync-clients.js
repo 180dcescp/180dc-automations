@@ -39,12 +39,38 @@ class ClientSync {
 
     // Initialize Google Sheets client
     this.sheets = null;
+    this.sheetsId = this.extractSheetId(process.env.GSHEET_CLIENTS_LINK);
     this.initializeGoogleSheets();
 
     // Initialize Slack client
     this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
     this.slackChannel = process.env.SLACK_CHANNEL || '#automation-updates';
     this.slackEnabled = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL);
+  }
+
+  /**
+   * Extract sheet ID from Google Sheets URL
+   */
+  extractSheetId(url) {
+    if (!url) {
+      throw new Error('GSHEET_CLIENTS_LINK environment variable is required');
+    }
+    
+    // Extract sheet ID from various Google Sheets URL formats
+    const patterns = [
+      /\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/,  // Standard format
+      /\/d\/([a-zA-Z0-9-_]+)/,                // Short format
+      /id=([a-zA-Z0-9-_]+)/                   // Alternative format
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    
+    throw new Error(`Could not extract sheet ID from URL: ${url}`);
   }
 
   /**
@@ -84,9 +110,9 @@ class ClientSync {
         throw new Error('Google Sheets not initialized');
       }
 
-      const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+      const spreadsheetId = this.sheetsId;
       if (!spreadsheetId) {
-        throw new Error('GOOGLE_SHEETS_ID not set in environment variables');
+        throw new Error('GSHEET_CLIENTS_LINK not set in environment variables');
       }
 
       // Try to get spreadsheet metadata
@@ -122,7 +148,7 @@ class ClientSync {
    */
   async getClients() {
     try {
-      const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+      const spreadsheetId = this.sheetsId;
       
       console.log(`📊 Fetching clients from Google Sheets: ${spreadsheetId}`);
       

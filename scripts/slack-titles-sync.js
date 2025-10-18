@@ -34,7 +34,7 @@ class SlackTitlesSync {
     
     // Configuration matching the original Google Apps Script
     this.config = {
-      SHEET_NAME: 'Members',
+      SHEET_NAME: 'Member Database',
       
       // Column headers
       COL_EMAIL: 'Email 180',
