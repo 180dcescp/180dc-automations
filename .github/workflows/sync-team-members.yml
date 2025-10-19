@@ -45,15 +45,3 @@ jobs:
             node scripts/sync-team-members.js
           fi
           
-      - name: Commit and push changes (if any)
-        if: github.event_name == 'schedule' && github.event.inputs.dry_run != 'true'
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add .
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Auto-sync team members from Slack [skip ci]"
-            git push
-          fi
