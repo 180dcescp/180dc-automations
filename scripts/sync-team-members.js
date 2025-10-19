@@ -224,6 +224,9 @@ class TeamMemberSync {
       return { isDefault: true, method: 'no-image' };
     }
     
+    // Log the actual URL for pattern analysis
+    console.log(`🔍 ${memberName}: Checking URL: ${imageUrl}`);
+    
     // First, check for obvious URL patterns (fast check)
     const urlPatterns = [
       // Slack default avatars
@@ -266,6 +269,8 @@ class TeamMemberSync {
       console.log(`🔍 ${memberName}: URL pattern match - DEFAULT`);
       return { isDefault: true, method: 'url-pattern' };
     }
+    
+    console.log(`🔍 ${memberName}: No URL pattern match, proceeding to color analysis`);
     
     // If URL patterns don't indicate a default, analyze the image colors
     try {
