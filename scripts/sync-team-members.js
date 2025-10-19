@@ -112,9 +112,9 @@ class TeamMemberSync {
       
       // Special case: Consultant roles always get "Consultants"
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
-        console.log(`🔍 DEBUG: Consultant role detected, setting department to Consultants`);
+        console.log(`🔍 DEBUG: Consultant role detected, setting role and department to Consultants`);
         return {
-          position: position,
+          position: 'Consultants',  // Changed from position to 'Consultants'
           department: 'Consultants',
           isAlumni: false
         };
@@ -141,18 +141,18 @@ class TeamMemberSync {
       }
       
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
-        console.log(`🔍 DEBUG: Consultant role without department, setting to Consultants`);
+        console.log(`🔍 DEBUG: Consultant role without department, setting role and department to Consultants`);
         return {
-          position: position,
+          position: 'Consultants',  // Changed from position to 'Consultants'
           department: 'Consultants',
           isAlumni: false
         };
       }
       
-      console.log(`🔍 DEBUG: Position without department, department will be empty`);
+      console.log(`🔍 DEBUG: Position without explicit department, defaulting to Consultants`);
       return {
         position: position,
-        department: '',
+        department: 'Consultants',  // Default to Consultants instead of empty
         isAlumni: false
       };
     }
@@ -686,7 +686,7 @@ class TeamMemberSync {
         email,
         role,
         department,
-        photo,
+        image,
         slackId,
         slackUsername
       }`;
@@ -729,7 +729,7 @@ class TeamMemberSync {
         );
         
         if (uploadedImage) {
-          doc.photo = uploadedImage;  // Changed from 'profileImage' to 'photo'
+          doc.image = uploadedImage;  // Changed from 'photo' to 'image' to match Sanity schema
           console.log(`🔍 DEBUG: Image uploaded successfully for ${memberData.name}`);
         } else {
           console.log(`🔍 DEBUG: Image upload failed for ${memberData.name}`);
@@ -743,6 +743,13 @@ class TeamMemberSync {
       const result = await this.sanity.create(doc);
       console.log(`✅ Created team member: ${memberData.name}`);
       console.log(`🔍 DEBUG: Sanity response:`, JSON.stringify(result, null, 2));
+      
+      // Compare sent vs received fields
+      console.log(`🔍 DEBUG: Field comparison for ${memberData.name}:`);
+      console.log(`  - Sent role: "${doc.role}" | Received role: "${result.role || 'MISSING'}"`);
+      console.log(`  - Sent department: "${doc.department}" | Received department: "${result.department || 'MISSING'}"`);
+      console.log(`  - Sent image: ${doc.image ? 'YES' : 'NO'} | Received image: ${result.image ? 'YES' : 'NO'}`);
+      
       return result;
     } catch (error) {
       console.error(`❌ Error creating team member ${memberData.name}:`, error);
@@ -774,7 +781,7 @@ class TeamMemberSync {
         );
         
         if (uploadedImage) {
-          updateData.photo = uploadedImage;  // Changed from 'profileImage' to 'photo'
+          updateData.image = uploadedImage;  // Changed from 'photo' to 'image' to match Sanity schema
         }
       }
 
