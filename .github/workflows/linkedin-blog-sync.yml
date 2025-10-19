@@ -36,8 +36,8 @@ jobs:
           SANITY_PROJECT_ID: ${{ secrets.SANITY_PROJECT_ID }}
           SANITY_DATASET: ${{ secrets.SANITY_DATASET }}
           SANITY_TOKEN: ${{ secrets.SANITY_TOKEN }}
-          LINKEDIN_CLIENT_ID: ${{ secrets.LINKEDIN_CLIENT_ID }}
-          LINKEDIN_CLIENT_SECRET: ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          LINKEDIN_ID: ${{ secrets.LINKEDIN_ID }}
+          LINKEDIN_API_KEY: ${{ secrets.LINKEDIN_API_KEY }}
           LINKEDIN_ORG_ID: ${{ secrets.LINKEDIN_ORG_ID }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: node scripts/sync-linkedin-posts.js

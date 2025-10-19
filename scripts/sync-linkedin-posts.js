@@ -37,8 +37,8 @@ class LinkedInPostsSync {
 
     // LinkedIn API configuration
     this.linkedinApiBase = 'https://api.linkedin.com/v2';
-    this.linkedinClientId = process.env.LINKEDIN_CLIENT_ID;
-    this.linkedinClientSecret = process.env.LINKEDIN_CLIENT_SECRET;
+    this.linkedinClientId = process.env.LINKEDIN_ID;
+    this.linkedinClientSecret = process.env.LINKEDIN_API_KEY;
     this.linkedinAccessToken = null;
     
     // Calculate date 6 months ago
@@ -55,8 +55,8 @@ class LinkedInPostsSync {
       'SANITY_PROJECT_ID',
       'SANITY_DATASET', 
       'SANITY_TOKEN',
-      'LINKEDIN_CLIENT_ID',
-      'LINKEDIN_CLIENT_SECRET',
+      'LINKEDIN_ID',
+      'LINKEDIN_API_KEY',
       'LINKEDIN_ORG_ID'
     ];
 
