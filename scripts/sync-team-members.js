@@ -5,9 +5,10 @@
  * 
  * This script automatically syncs team member data from Slack profiles to Sanity CMS.
  * It handles position extraction, department assignment, alumni exclusion, and default avatar detection.
+ * Uses a delete-all-then-recreate approach for reliable data consistency.
  * 
  * @author 180DC ESCP Development Team
- * @version 1.0.0
+ * @version 1.1.0
  * @since 2024-01-01
  */
 
@@ -473,7 +474,8 @@ class TeamMemberSync {
   }
 
   /**
-   * Main sync process that orchestrates the entire team member synchronization
+   * Main sync process that orchestrates the entire team member synchronization.
+   * Uses a delete-all-then-recreate approach for reliable data consistency.
    * @async
    * @function sync
    * @returns {Promise<void>} Resolves when sync is complete
@@ -526,7 +528,7 @@ class TeamMemberSync {
       await this.updateAlumniCount(alumniCount);
 
       console.log('\n🎉 Sync completed successfully!');
-      console.log(`📊 Summary: ${syncResults.created} created, ${syncResults.updated} updated, ${syncResults.deleted} deleted`);
+      console.log(`📊 Summary: ${syncResults.created} created, ${syncResults.deleted} deleted`);
       console.log(`👥 Alumni count: ${alumniCount}`);
 
       if (syncResults.errors.length > 0) {
@@ -550,7 +552,6 @@ class TeamMemberSync {
         summary: `Synced ${slackData.length} team members from Slack to Sanity CMS. Alumni count: ${alumniCount}`,
         results: {
           created: syncResults.created,
-          updated: syncResults.updated,
           deleted: syncResults.deleted,
           processed: slackData.length,
           errors: syncResults.errors.length
@@ -709,55 +710,22 @@ class TeamMemberSync {
   }
 
   /**
-   * Sync team members from Slack data
+   * Sync team members from Slack data using delete-all-then-recreate approach
    */
   async syncTeamMembers(slackData) {
     try {
-      const existingMembers = await this.getExistingTeamMembers();
       const results = {
         created: 0,
-        updated: 0,
         deleted: 0,
         errors: [],
         failedAvatars: []
       };
 
-      // Create a map of existing members by email for easy lookup
-      const existingByEmail = new Map();
-      existingMembers.forEach(member => {
-        if (member.email) {
-          existingByEmail.set(member.email.toLowerCase(), member);
-        }
-      });
-
-      // Process each member from Slack
-      for (const memberData of slackData) {
-        try {
-          if (!memberData.name || !memberData.email) {
-            console.warn(`Skipping member - no name or email provided`);
-            continue;
-          }
-
-          const existingMember = existingByEmail.get(memberData.email.toLowerCase());
-          
-          if (existingMember) {
-            // Update existing member
-            await this.updateTeamMember(existingMember._id, memberData);
-            results.updated++;
-            existingByEmail.delete(memberData.email.toLowerCase());
-          } else {
-            // Create new member
-            await this.createTeamMember(memberData);
-            results.created++;
-          }
-        } catch (error) {
-          console.error(`Error processing ${memberData.name}:`, error);
-          results.errors.push({ name: memberData.name, error: error.message });
-        }
-      }
-
-      // Delete members that are no longer in Slack
-      for (const [email, member] of existingByEmail) {
+      // Step 1: Delete all existing team members
+      console.log('🗑️ Deleting all existing team members...');
+      const existingMembers = await this.getExistingTeamMembers();
+      
+      for (const member of existingMembers) {
         try {
           await this.deleteTeamMember(member._id, member.name);
           results.deleted++;
@@ -767,6 +735,26 @@ class TeamMemberSync {
         }
       }
 
+      console.log(`✅ Deleted ${results.deleted} existing team members`);
+
+      // Step 2: Create all members from Slack data
+      console.log('➕ Creating all team members from Slack data...');
+      for (const memberData of slackData) {
+        try {
+          if (!memberData.name || !memberData.email) {
+            console.warn(`Skipping member - no name or email provided`);
+            continue;
+          }
+
+          await this.createTeamMember(memberData);
+          results.created++;
+        } catch (error) {
+          console.error(`Error creating ${memberData.name}:`, error);
+          results.errors.push({ name: memberData.name, error: error.message });
+        }
+      }
+
+      console.log(`✅ Created ${results.created} new team members`);
       console.log('📊 Team Member Sync Results:', results);
       return results;
     } catch (error) {
@@ -776,31 +764,31 @@ class TeamMemberSync {
   }
 
   /**
-   * Update alumni count in Sanity
+   * Update alumni count in site settings
    */
   async updateAlumniCount(count) {
     try {
-      // First, try to find existing alumni count document
-      const query = `*[_type == "alumniCount"][0]`;
+      // First, try to find existing site settings document
+      const query = `*[_type == "siteSettings"][0]`;
       const existing = await this.sanity.fetch(query);
       
       if (existing) {
-        // Update existing document
+        // Update existing site settings document
         await this.sanity
           .patch(existing._id)
-          .set({ count: count })
+          .set({ alumniCount: count })
           .commit();
-        console.log(`✅ Updated alumni count: ${count}`);
+        console.log(`✅ Updated alumni count in site settings: ${count}`);
       } else {
-        // Create new document
+        // Create new site settings document
         await this.sanity.create({
-          _type: 'alumniCount',
-          count: count
+          _type: 'siteSettings',
+          alumniCount: count
         });
-        console.log(`✅ Created alumni count: ${count}`);
+        console.log(`✅ Created site settings with alumni count: ${count}`);
       }
     } catch (error) {
-      console.error('Error updating alumni count:', error);
+      console.error('Error updating alumni count in site settings:', error);
       throw error;
     }
   }
@@ -818,7 +806,6 @@ class TeamMemberSync {
     if (results) {
       message += `📈 *Results:*\n`;
       if (results.created) message += `• ✅ Created: ${results.created}\n`;
-      if (results.updated) message += `• 🔄 Updated: ${results.updated}\n`;
       if (results.deleted) message += `• 🗑️ Deleted: ${results.deleted}\n`;
       if (results.processed) message += `• 📊 Processed: ${results.processed}\n`;
       if (results.skipped) message += `• ⏭️ Skipped: ${results.skipped}\n`;

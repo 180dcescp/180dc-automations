@@ -163,47 +163,52 @@ class NotionMemberSync {
         return -1;
       };
       
-      const columnIndices = {
-        name: getColumnIndex('Full Name') !== -1 ? getColumnIndex('Full Name') : 0,
-        position: getColumnIndex('Position') !== -1 ? getColumnIndex('Position') : 3,
-        department: getColumnIndex('Department') !== -1 ? getColumnIndex('Department') : 4,
-        campus: getColumnIndex('Campus') !== -1 ? getColumnIndex('Campus') : 5,
-        program: getColumnIndex('Program') !== -1 ? getColumnIndex('Program') : 6,
-        status: getColumnIndex('Status') !== -1 ? getColumnIndex('Status') : 7,
-        email: getColumnIndex('Email 180') !== -1 ? getColumnIndex('Email 180') : 9,
-        phone: getColumnIndex('Phone') !== -1 ? getColumnIndex('Phone') : 11,
-        projects: getColumnIndex('Projects') !== -1 ? getColumnIndex('Projects') : 19
-      };
+      // Dynamic column mapping - map all headers to their indices
+      const columnIndices = {};
+      headers.forEach((header, index) => {
+        if (header && header.toString().trim()) {
+          const cleanHeader = header.toString().trim();
+          columnIndices[cleanHeader] = index;
+        }
+      });
       
       console.log('📋 Using column indices:', columnIndices);
       
       // Transform rows to member objects
       const members = dataRows.map((row, index) => {
-        // Clean phone number - convert from scientific notation if needed
-        let phoneNumber = row[columnIndices.phone] || '';
-        if (typeof phoneNumber === 'number' && phoneNumber.toString().includes('e')) {
-          phoneNumber = phoneNumber.toFixed(0);
-        }
-        phoneNumber = phoneNumber.toString().trim();
-        
-        // Add "+" if phone number doesn't start with it
-        if (phoneNumber && !phoneNumber.startsWith('+')) {
-          phoneNumber = '+' + phoneNumber;
-        }
-
-        return {
-          name: row[columnIndices.name] || '',
-          position: row[columnIndices.position] || '',
-          department: row[columnIndices.department] || '',
-          campus: row[columnIndices.campus] || '',
-          program: row[columnIndices.program] || '',
-          status: row[columnIndices.status] || '',
-          email: row[columnIndices.email] || '',
-          phone: phoneNumber,
-          projects: row[columnIndices.projects] || '',
+        // Create member object with all available columns
+        const member = {
           rowIndex: index + 2
         };
-      }).filter(member => member.name.trim()); // Only include members with names
+        
+        // Add all columns dynamically
+        Object.keys(columnIndices).forEach(columnName => {
+          const columnIndex = columnIndices[columnName];
+          let value = row[columnIndex] || '';
+          
+          // Special handling for phone number
+          if (columnName.toLowerCase().includes('phone')) {
+            // Clean phone number - convert from scientific notation if needed
+            if (typeof value === 'number' && value.toString().includes('e')) {
+              value = value.toFixed(0);
+            }
+            value = value.toString().trim();
+            
+            // Add "+" if phone number doesn't start with it
+            if (value && !value.startsWith('+')) {
+              value = '+' + value;
+            }
+          }
+          
+          member[columnName] = value;
+        });
+        
+        return member;
+      }).filter(member => {
+        // Check if member has a name (could be "Full Name" or "Name" column)
+        const nameField = member['Full Name'] || member['Name'] || '';
+        return nameField.toString().trim();
+      }); // Only include members with names
 
       console.log(`📊 Loaded ${members.length} members from sheet`);
       return { members, columnIndices };
@@ -400,97 +405,27 @@ class NotionMemberSync {
         throw new Error('Failed to get database schema');
       }
 
-      // Build properties based on what's actually available in the database
+      // Build properties dynamically based on available columns
       const properties = {};
       
-      // Title property (required)
-      const titleProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'title'
-      );
-      if (titleProperty) {
-        properties[titleProperty] = {
-          title: [
-            {
-              text: {
-                content: memberData.name || 'Unknown Member'
-              }
-            }
-          ]
-        };
-      }
+      // Map all Google Sheets columns to Notion properties
+      Object.keys(memberData).forEach(gsheetColumn => {
+        if (gsheetColumn === 'rowIndex') return; // Skip internal fields
+        
+        const mappedProperty = this.mapColumnToNotionProperty(gsheetColumn, database.properties, memberData);
+        if (mappedProperty) {
+          Object.assign(properties, mappedProperty);
+        }
+      });
 
-      // Email property
-      const emailProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'email'
-      );
-      if (emailProperty && memberData.email && memberData.email.trim()) {
-        properties[emailProperty] = {
-          email: memberData.email.trim()
-        };
-      }
-
-      // Position property (select)
-      const positionProperty = Object.keys(database.properties).find(key => 
+      // Always set Archive to "Not Archived" for new pages
+      const archiveProperty = Object.keys(database.properties).find(key => 
         database.properties[key].type === 'select' && 
-        key.toLowerCase().includes('position')
+        key.toLowerCase().includes('archive')
       );
-      if (positionProperty && memberData.position) {
-        properties[positionProperty] = {
-          select: { name: memberData.position }
-        };
-      }
-
-      // Department property (select)
-      const departmentProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'select' && 
-        key.toLowerCase().includes('department')
-      );
-      if (departmentProperty && memberData.department) {
-        properties[departmentProperty] = {
-          select: { name: memberData.department }
-        };
-      }
-
-      // Campus property (select)
-      const campusProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'select' && 
-        key.toLowerCase().includes('campus')
-      );
-      if (campusProperty && memberData.campus) {
-        properties[campusProperty] = {
-          select: { name: memberData.campus }
-        };
-      }
-
-      // Program property (select)
-      const programProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'select' && 
-        key.toLowerCase().includes('program')
-      );
-      if (programProperty && memberData.program) {
-        properties[programProperty] = {
-          select: { name: memberData.program }
-        };
-      }
-
-      // Phone property
-      const phoneProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'phone_number'
-      );
-      if (phoneProperty && memberData.phone) {
-        properties[phoneProperty] = {
-          phone_number: memberData.phone
-        };
-      }
-
-      // Projects property (multi_select)
-      const projectsProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'multi_select' && 
-        key.toLowerCase().includes('project')
-      );
-      if (projectsProperty && memberData.projects) {
-        properties[projectsProperty] = {
-          multi_select: memberData.projects.split(', ').map(project => ({ name: project.trim() }))
+      if (archiveProperty) {
+        properties[archiveProperty] = {
+          select: { name: "Not Archived" }
         };
       }
 
@@ -518,8 +453,14 @@ class NotionMemberSync {
         console.log(`✅ Created page for ${memberData.name}:`, result.id);
         
         // Try to set Slack profile picture as cover
-        if (memberData.email) {
-          const profilePicture = await this.getSlackProfilePicture(memberData.email);
+        // Look for any email field that might contain the 180 email
+        const emailField = Object.keys(memberData).find(key => 
+          key.toLowerCase().includes('email') && 
+          memberData[key] && 
+          memberData[key].toString().trim()
+        );
+        if (emailField) {
+          const profilePicture = await this.getSlackProfilePicture(memberData[emailField]);
           if (profilePicture) {
             await this.setNotionPageCover(result.id, profilePicture);
           }
@@ -539,46 +480,60 @@ class NotionMemberSync {
 
   /**
    * Update an existing page in the Notion database
+   * Only updates empty fields, never overwrites existing data
    */
   async updateNotionPage(pageId, memberData) {
     try {
-      const pageData = {
-        properties: {
-          'Name': {
-            title: [
-              {
-                text: {
-                  content: memberData.name || 'Unknown Member'
-                }
-              }
-            ]
-          },
-          'Email': {
-            email: memberData.email && memberData.email.trim() ? memberData.email.trim() : null
-          },
-          'Position': {
-            select: memberData.position ? { name: memberData.position } : null
-          },
-          'Department': {
-            select: memberData.department ? { name: memberData.department } : null
-          },
-          'Campus': {
-            select: memberData.campus ? { name: memberData.campus } : null
-          },
-          'Program': {
-            select: memberData.program ? { name: memberData.program } : null
-          },
-          'Phone': {
-            phone_number: memberData.phone || null
-          },
-          'Projects': {
-            multi_select: memberData.projects ? 
-              memberData.projects.split(', ').map(project => ({ name: project.trim() })) : []
+      // Get database schema to understand property names
+      const database = await this.getDatabaseSchema();
+      if (!database) {
+        throw new Error('Failed to get database schema');
+      }
+
+      // Fetch existing page data to check for empty fields
+      const existingPage = await this.getExistingPageData(pageId);
+      if (!existingPage) {
+        throw new Error('Failed to get existing page data');
+      }
+
+      // Build properties object with ONLY empty fields
+      const properties = {};
+
+      // Map all Google Sheets columns to Notion properties (only if empty in Notion)
+      Object.keys(memberData).forEach(gsheetColumn => {
+        if (gsheetColumn === 'rowIndex') return; // Skip internal fields
+        
+        // Find matching Notion property
+        const notionPropertyName = Object.keys(database.properties).find(propName => 
+          propName.toLowerCase() === gsheetColumn.toLowerCase()
+        );
+        
+        if (notionPropertyName && this.isFieldEmpty(existingPage.properties[notionPropertyName])) {
+          const mappedProperty = this.mapColumnToNotionProperty(gsheetColumn, database.properties, memberData);
+          if (mappedProperty) {
+            Object.assign(properties, mappedProperty);
           }
         }
-      };
+      });
 
-      console.log(`📝 Updating page for ${memberData.name} with projects:`, memberData.projects);
+      // Always set Archive to "Not Archived" for matched members
+      const archiveProperty = Object.keys(database.properties).find(key => 
+        database.properties[key].type === 'select' && 
+        key.toLowerCase().includes('archive')
+      );
+      if (archiveProperty) {
+        properties[archiveProperty] = {
+          select: { name: "Not Archived" }
+        };
+      }
+
+      // Only proceed if there are properties to update
+      if (Object.keys(properties).length === 0) {
+        console.log(`⏭️ No empty fields to update for ${memberData.name}`);
+        return { id: pageId }; // Return existing page ID
+      }
+
+      console.log(`📝 Updating page for ${memberData.name} with ${Object.keys(properties).length} fields`);
 
       const response = await fetch(`${this.notionApiBase}/pages/${pageId}`, {
         method: 'PATCH',
@@ -587,7 +542,7 @@ class NotionMemberSync {
           'Content-Type': 'application/json',
           'Notion-Version': this.notionApiVersion
         },
-        body: JSON.stringify(pageData)
+        body: JSON.stringify({ properties })
       });
 
       if (response.ok) {
@@ -595,8 +550,14 @@ class NotionMemberSync {
         console.log(`✅ Updated page for ${memberData.name}:`, result.id);
         
         // Try to set Slack profile picture as cover
-        if (memberData.email) {
-          const profilePicture = await this.getSlackProfilePicture(memberData.email);
+        // Look for any email field that might contain the 180 email
+        const emailField = Object.keys(memberData).find(key => 
+          key.toLowerCase().includes('email') && 
+          memberData[key] && 
+          memberData[key].toString().trim()
+        );
+        if (emailField) {
+          const profilePicture = await this.getSlackProfilePicture(memberData[emailField]);
           if (profilePicture) {
             await this.setNotionPageCover(result.id, profilePicture);
           }
@@ -646,6 +607,176 @@ class NotionMemberSync {
   }
 
   /**
+   * Get existing page data to check for empty fields
+   */
+  async getExistingPageData(pageId) {
+    try {
+      const response = await fetch(`${this.notionApiBase}/pages/${pageId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.notionToken}`,
+          'Notion-Version': this.notionApiVersion
+        }
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      } else {
+        console.error(`❌ Failed to get page data for ${pageId}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`❌ Error getting page data for ${pageId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if a Notion property is empty
+   */
+  isFieldEmpty(property) {
+    if (!property) return true;
+    
+    switch (property.type) {
+      case 'title':
+      case 'rich_text':
+        return !property[property.type] || property[property.type].length === 0;
+      case 'email':
+      case 'phone_number':
+      case 'url':
+        return !property[property.type];
+      case 'select':
+        return !property.select;
+      case 'multi_select':
+        return !property.multi_select || property.multi_select.length === 0;
+      case 'date':
+        return !property.date;
+      default:
+        return true;
+    }
+  }
+
+  /**
+   * Set the Archive select field instead of archiving the page
+   */
+  async setArchiveStatus(pageId, status) {
+    try {
+      const response = await fetch(`${this.notionApiBase}/pages/${pageId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${this.notionToken}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': this.notionApiVersion
+        },
+        body: JSON.stringify({
+          properties: {
+            'Archive': { select: { name: status } }
+          }
+        })
+      });
+      
+      if (response.ok) {
+        console.log(`📋 Set Archive status to "${status}" for page: ${pageId}`);
+        return true;
+      } else {
+        const error = await response.text();
+        console.error(`❌ Failed to set Archive status for page ${pageId}: ${error}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ Error setting Archive status for page ${pageId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Map Google Sheets column to Notion property dynamically
+   */
+  mapColumnToNotionProperty(gsheetColumn, notionProperties, memberData) {
+    // Find matching Notion property (case insensitive)
+    const notionPropertyName = Object.keys(notionProperties).find(propName => 
+      propName.toLowerCase() === gsheetColumn.toLowerCase()
+    );
+    
+    if (!notionPropertyName) {
+      return null; // No matching property found
+    }
+    
+    const notionProperty = notionProperties[notionPropertyName];
+    const value = memberData[gsheetColumn];
+    
+    if (!value || value.toString().trim() === '') {
+      return null; // No value to set
+    }
+    
+    // Map value based on Notion property type
+    switch (notionProperty.type) {
+      case 'title':
+        return {
+          [notionPropertyName]: {
+            title: [{ text: { content: value.toString().trim() } }]
+          }
+        };
+      
+      case 'email':
+        return {
+          [notionPropertyName]: {
+            email: value.toString().trim()
+          }
+        };
+      
+      case 'phone_number':
+        return {
+          [notionPropertyName]: {
+            phone_number: value.toString().trim()
+          }
+        };
+      
+      case 'select':
+        return {
+          [notionPropertyName]: {
+            select: { name: value.toString().trim() }
+          }
+        };
+      
+      case 'multi_select':
+        // Handle comma-separated values
+        const values = value.toString().split(',').map(v => v.trim()).filter(v => v);
+        return {
+          [notionPropertyName]: {
+            multi_select: values.map(v => ({ name: v }))
+          }
+        };
+      
+      case 'rich_text':
+        return {
+          [notionPropertyName]: {
+            rich_text: [{ text: { content: value.toString().trim() } }]
+          }
+        };
+      
+      case 'date':
+        // Handle date format (assuming YYYY-MM-DD or similar)
+        return {
+          [notionPropertyName]: {
+            date: { start: value.toString().trim() }
+          }
+        };
+      
+      case 'url':
+        return {
+          [notionPropertyName]: {
+            url: value.toString().trim()
+          }
+        };
+      
+      default:
+        console.log(`⚠️ Unknown property type: ${notionProperty.type} for ${notionPropertyName}`);
+        return null;
+    }
+  }
+
+  /**
    * Main sync function
    */
   async sync() {
@@ -673,23 +804,18 @@ class NotionMemberSync {
         
         try {
           // Skip if member name is empty
-          if (!memberData.name.trim()) {
+          const memberName = memberData['Full Name'] || memberData['Name'] || '';
+          if (!memberName.toString().trim()) {
             console.log(`⏭️ Skipping row ${i + 2}: No member name`);
             continue;
           }
 
-          // Skip if status is not "Active"
-          if (memberData.status !== 'Active') {
-            console.log(`⏭️ Skipping row ${i + 2}: Status is "${memberData.status}", not "Active"`);
-            continue;
-          }
-
-          console.log(`📊 Processing member: ${memberData.name} (Status: ${memberData.status})`);
+          console.log(`📊 Processing member: ${memberName} (Status: ${memberData.Status || 'Unknown'})`);
 
           // Check if member already exists
           const existingPage = existingPages.find(page => {
             const pageName = this.getMemberNameFromPage(page);
-            return pageName === memberData.name;
+            return pageName === memberName;
           });
 
           if (existingPage) {
@@ -725,35 +851,34 @@ class NotionMemberSync {
         }
       }
 
-      // Clean up: Archive members that don't exist in the Google Sheet or are not Active
+      // Clean up: Set Archive status for members that don't exist in the Google Sheet
       console.log('\n🧹 Cleaning up: Checking for members to archive...');
-      const activeMemberNames = members
+      const sheetMemberNames = members
         .filter(member => {
-          const name = member.name?.toString().trim();
-          const status = member.status?.toString().trim();
-          return name && name.length > 0 && status === 'Active';
+          const name = member['Full Name'] || member['Name'] || '';
+          return name.toString().trim();
         })
-        .map(member => member.name?.toString().trim());
+        .map(member => (member['Full Name'] || member['Name'] || '').toString().trim());
       
       let archivedCount = 0;
       for (const page of existingPages) {
         const pageName = this.getMemberNameFromPage(page);
-        if (pageName && !activeMemberNames.includes(pageName)) {
+        if (pageName && !sheetMemberNames.includes(pageName)) {
           try {
-            await this.archiveNotionPage(page.id);
+            await this.setArchiveStatus(page.id, "Archived");
             archivedCount++;
           } catch (error) {
-            console.error(`❌ Error archiving ${pageName}:`, error);
+            console.error(`❌ Error setting Archive status for ${pageName}:`, error);
           }
         }
       }
 
       console.log(`\n🎉 Notion Member Database Sync completed!`);
       console.log(`📊 Summary:`);
-      console.log(`  ✅ Successfully processed: ${successCount} active members`);
+      console.log(`  ✅ Successfully processed: ${successCount} members`);
       console.log(`  🆕 Created: ${createdCount} new members`);
       console.log(`  🔄 Updated: ${updatedCount} existing members`);
-      console.log(`  🗑️ Archived: ${archivedCount} inactive members`);
+      console.log(`  🗑️ Archived: ${archivedCount} members not in sheet`);
       console.log(`  ❌ Errors: ${errorCount} members`);
 
     } catch (error) {
