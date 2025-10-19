@@ -37,9 +37,7 @@ class LinkedInPostsSync {
 
     // LinkedIn API configuration
     this.linkedinApiBase = 'https://api.linkedin.com/v2';
-    this.linkedinClientId = process.env.LINKEDIN_ID;
-    this.linkedinClientSecret = process.env.LINKEDIN_API_KEY;
-    this.linkedinAccessToken = null;
+    this.linkedinAccessToken = process.env.LINKEDIN_ACCESS_TOKEN;
     
     // Calculate date 6 months ago
     const sixMonthsAgo = new Date();
@@ -55,8 +53,7 @@ class LinkedInPostsSync {
       'SANITY_PROJECT_ID',
       'SANITY_DATASET', 
       'SANITY_TOKEN',
-      'LINKEDIN_ID',
-      'LINKEDIN_API_KEY',
+      'LINKEDIN_ACCESS_TOKEN',
       'LINKEDIN_ORG_ID'
     ];
 
@@ -83,51 +80,20 @@ class LinkedInPostsSync {
   }
 
   /**
-   * Get LinkedIn access token using client credentials
-   */
-  async getLinkedInAccessToken() {
-    try {
-      const response = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: new URLSearchParams({
-          grant_type: 'client_credentials',
-          client_id: this.linkedinClientId,
-          client_secret: this.linkedinClientSecret
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`LinkedIn OAuth error: ${response.status} - ${error}`);
-      }
-
-      const data = await response.json();
-      this.linkedinAccessToken = data.access_token;
-      console.log('✅ LinkedIn access token obtained');
-      return true;
-    } catch (error) {
-      console.error('❌ LinkedIn OAuth failed:', error.message);
-      return false;
-    }
-  }
-
-  /**
    * Test connection to LinkedIn API
    */
   async testLinkedInConnection() {
     try {
       if (!this.linkedinAccessToken) {
-        const tokenSuccess = await this.getLinkedInAccessToken();
-        if (!tokenSuccess) return false;
+        console.error('❌ LinkedIn access token not provided');
+        return false;
       }
 
       const response = await fetch(`${this.linkedinApiBase}/me`, {
         headers: {
           'Authorization': `Bearer ${this.linkedinAccessToken}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Restli-Protocol-Version': '2.0.0'
         }
       });
 
@@ -179,12 +145,12 @@ class LinkedInPostsSync {
       console.log('📊 Fetching LinkedIn posts from the last 6 months...');
       
       if (!this.linkedinAccessToken) {
-        const tokenSuccess = await this.getLinkedInAccessToken();
-        if (!tokenSuccess) throw new Error('Failed to get LinkedIn access token');
+        throw new Error('LinkedIn access token not provided');
       }
 
-      // Use the Social Media Management API to get organization posts
-      const response = await fetch(`${this.linkedinApiBase}/socialActions?q=actor&actor=urn:li:organization:${process.env.LINKEDIN_ORG_ID}&count=100`, {
+      // Use the UGC Posts API to get organization posts
+      const orgUrn = `urn:li:organization:${process.env.LINKEDIN_ORG_ID}`;
+      const response = await fetch(`${this.linkedinApiBase}/ugcPosts?q=authors&authors=List(${encodeURIComponent(orgUrn)})&count=100`, {
         headers: {
           'Authorization': `Bearer ${this.linkedinAccessToken}`,
           'Content-Type': 'application/json',
@@ -202,7 +168,7 @@ class LinkedInPostsSync {
       
       // Filter posts from the last 6 months
       const recentPosts = posts.filter(post => {
-        const postDate = new Date(post.created.time);
+        const postDate = new Date(post.created?.time || post.lastModified?.time);
         return postDate >= new Date(this.sixMonthsAgo);
       });
 
