@@ -37,7 +37,9 @@ class LinkedInPostsSync {
 
     // LinkedIn API configuration
     this.linkedinApiBase = 'https://api.linkedin.com/v2';
-    this.linkedinAccessToken = process.env.LINKEDIN_ACCESS_TOKEN;
+    this.linkedinClientId = process.env.LINKEDIN_ID;
+    this.linkedinClientSecret = process.env.LINKEDIN_API_KEY;
+    this.linkedinAccessToken = null;
     
     // Calculate date 6 months ago
     const sixMonthsAgo = new Date();
@@ -53,7 +55,8 @@ class LinkedInPostsSync {
       'SANITY_PROJECT_ID',
       'SANITY_DATASET', 
       'SANITY_TOKEN',
-      'LINKEDIN_ACCESS_TOKEN',
+      'LINKEDIN_ID',
+      'LINKEDIN_API_KEY',
       'LINKEDIN_ORG_ID'
     ];
 
@@ -80,13 +83,45 @@ class LinkedInPostsSync {
   }
 
   /**
+   * Get LinkedIn access token using client credentials
+   */
+  async getLinkedInAccessToken() {
+    try {
+      const response = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: this.linkedinClientId,
+          client_secret: this.linkedinClientSecret
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`LinkedIn OAuth error: ${response.status} - ${error}`);
+      }
+
+      const data = await response.json();
+      this.linkedinAccessToken = data.access_token;
+      console.log('✅ LinkedIn access token obtained');
+      return true;
+    } catch (error) {
+      console.error('❌ LinkedIn OAuth failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
    * Test connection to LinkedIn API
    */
   async testLinkedInConnection() {
     try {
       if (!this.linkedinAccessToken) {
-        console.error('❌ LinkedIn access token not provided');
-        return false;
+        const tokenSuccess = await this.getLinkedInAccessToken();
+        if (!tokenSuccess) return false;
       }
 
       const response = await fetch(`${this.linkedinApiBase}/me`, {
@@ -145,7 +180,8 @@ class LinkedInPostsSync {
       console.log('📊 Fetching LinkedIn posts from the last 6 months...');
       
       if (!this.linkedinAccessToken) {
-        throw new Error('LinkedIn access token not provided');
+        const tokenSuccess = await this.getLinkedInAccessToken();
+        if (!tokenSuccess) throw new Error('Failed to get LinkedIn access token');
       }
 
       // Use the UGC Posts API to get organization posts
