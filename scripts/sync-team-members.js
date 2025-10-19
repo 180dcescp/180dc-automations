@@ -102,10 +102,10 @@ class TeamMemberSync {
         };
       }
       
-      // Special case: Consultant roles always get "Consultants"
+      // Special case: Consultant roles always get "Consultants" department
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
         return {
-          position: 'Consultants',  // Changed from position to 'Consultants'
+          position: position,  // Keep original position (Consultant, Senior Consultant, Project Leader)
           department: 'Consultants',
           isAlumni: false
         };
@@ -130,7 +130,7 @@ class TeamMemberSync {
       
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
         return {
-          position: 'Consultants',  // Changed from position to 'Consultants'
+          position: position,  // Keep original position (Consultant, Senior Consultant, Project Leader)
           department: 'Consultants',
           isAlumni: false
         };
@@ -795,7 +795,6 @@ class TeamMemberSync {
           // Validate position and department are not empty
           if (!memberData.position || !memberData.department) {
             console.warn(`⚠️ Skipping ${memberData.name} - missing position or department`);
-            console.log(`🔍 DEBUG: Position: "${memberData.position}", Department: "${memberData.department}"`);
             results.errors.push({ 
               name: memberData.name, 
               error: `Missing position (${memberData.position}) or department (${memberData.department})`
