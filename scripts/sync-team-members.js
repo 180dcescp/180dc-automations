@@ -74,27 +74,35 @@ class TeamMemberSync {
    * Parse Slack profile title to extract position and department
    */
   parseTitle(title) {
+    console.log(`🔍 DEBUG: Parsing title: "${title}"`);
+    
     if (!title || typeof title !== 'string') {
+      console.log(`🔍 DEBUG: Invalid title, returning empty`);
       return { position: '', department: '', isAlumni: false };
     }
 
     // Check if this is an alumni member
     if (title.toLowerCase().includes('alumni')) {
+      console.log(`🔍 DEBUG: Alumni detected, returning empty`);
       return { position: '', department: '', isAlumni: true };
     }
 
     // Remove everything in parentheses (project names, etc.)
     let cleanTitle = title.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+    console.log(`🔍 DEBUG: Cleaned title: "${cleanTitle}"`);
     
     // Split by " - " to separate position and department
     const parts = cleanTitle.split(' - ').map(p => p.trim());
+    console.log(`🔍 DEBUG: Split parts:`, parts);
     
     if (parts.length >= 2) {
       const position = parts[0];
       const department = parts[1];
+      console.log(`🔍 DEBUG: Position: "${position}", Department: "${department}"`);
       
       // Special case: President and Vice-President always get "Presidency"
       if (position === 'President' || position === 'Vice-President') {
+        console.log(`🔍 DEBUG: President/Vice-President detected, setting department to Presidency`);
         return {
           position: position,
           department: 'Presidency',
@@ -104,6 +112,7 @@ class TeamMemberSync {
       
       // Special case: Consultant roles always get "Consultants"
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
+        console.log(`🔍 DEBUG: Consultant role detected, setting department to Consultants`);
         return {
           position: position,
           department: 'Consultants',
@@ -111,6 +120,7 @@ class TeamMemberSync {
         };
       }
       
+      console.log(`🔍 DEBUG: Using parsed position and department`);
       return {
         position: position,
         department: department,
@@ -118,9 +128,11 @@ class TeamMemberSync {
       };
     } else if (parts.length === 1) {
       const position = parts[0];
+      console.log(`🔍 DEBUG: Single part position: "${position}"`);
       
       // Handle positions without explicit department
       if (position === 'President' || position === 'Vice-President') {
+        console.log(`🔍 DEBUG: President/Vice-President without department, setting to Presidency`);
         return {
           position: position,
           department: 'Presidency',
@@ -129,6 +141,7 @@ class TeamMemberSync {
       }
       
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
+        console.log(`🔍 DEBUG: Consultant role without department, setting to Consultants`);
         return {
           position: position,
           department: 'Consultants',
@@ -136,6 +149,7 @@ class TeamMemberSync {
         };
       }
       
+      console.log(`🔍 DEBUG: Position without department, department will be empty`);
       return {
         position: position,
         department: '',
@@ -143,6 +157,7 @@ class TeamMemberSync {
       };
     }
     
+    console.log(`🔍 DEBUG: No valid parts found, returning empty`);
     return { position: '', department: '', isAlumni: false };
   }
 
@@ -293,10 +308,16 @@ class TeamMemberSync {
    * Upload profile image to Sanity with AVIF conversion
    */
   async uploadProfileImageToSanity(imageUrl, memberName) {
-    if (!imageUrl) return null;
+    console.log(`🔍 DEBUG: uploadProfileImageToSanity called for ${memberName} with URL: ${imageUrl}`);
+    
+    if (!imageUrl) {
+      console.log(`🔍 DEBUG: No image URL provided for ${memberName}`);
+      return null;
+    }
     
     try {
       console.log(`📸 Processing profile image for ${memberName}...`);
+      console.log(`🔍 DEBUG: Starting AVIF conversion for ${memberName}`);
       
       // Convert to AVIF using the converter
       const avifBuffer = await this.avifConverter.convertUrlToAVIF(
@@ -305,23 +326,31 @@ class TeamMemberSync {
         { quality: 85, effort: 4 }
       );
       
+      console.log(`🔍 DEBUG: AVIF conversion completed for ${memberName}, buffer size: ${avifBuffer.length} bytes`);
+      
       // Upload to Sanity
+      console.log(`🔍 DEBUG: Uploading to Sanity for ${memberName}`);
       const asset = await this.sanity.assets.upload('image', avifBuffer, {
         filename: `${memberName.replace(/[^a-zA-Z0-9]/g, '_')}_profile.avif`,
         contentType: 'image/avif'
       });
       
       console.log(`✅ Profile image uploaded for ${memberName}: ${asset._id}`);
+      console.log(`🔍 DEBUG: Asset details:`, JSON.stringify(asset, null, 2));
       
-      return {
+      const result = {
         _type: 'image',
         asset: {
           _type: 'reference',
           _ref: asset._id
         }
       };
+      
+      console.log(`🔍 DEBUG: Returning image reference:`, JSON.stringify(result, null, 2));
+      return result;
     } catch (error) {
       console.error(`❌ Failed to upload profile image for ${memberName}:`, error.message);
+      console.error(`🔍 DEBUG: Full error:`, error);
       return null;
     }
   }
@@ -407,15 +436,20 @@ class TeamMemberSync {
       // Transform Slack members to our team member format
       const allMembers = await Promise.all(activeMembers.map(async member => {
         const profile = member.profile;
+        console.log(`🔍 DEBUG: Processing member: ${profile.real_name || profile.display_name || member.name}`);
+        console.log(`🔍 DEBUG: Raw profile title: "${profile.title}"`);
+        
         const { position, department, isAlumni } = this.parseTitle(profile.title);
+        console.log(`🔍 DEBUG: Parsed result - Position: "${position}", Department: "${department}", isAlumni: ${isAlumni}`);
         
         // Get the best available profile image
         const profileImage = profile.image_512 || profile.image_192 || profile.image_72;
+        console.log(`🔍 DEBUG: Profile image URL: ${profileImage}`);
         
         // Check if it's a default avatar (now async)
         const avatarResult = await this.isDefaultSlackAvatar(profileImage, profile.real_name || profile.display_name || member.name);
         
-        return {
+        const memberData = {
           name: profile.real_name || profile.display_name || member.name,
           email: profile.email,
           position: position,
@@ -428,6 +462,9 @@ class TeamMemberSync {
           avatarMethod: avatarResult.method,
           avatarCoverage: avatarResult.coverage
         };
+        
+        console.log(`🔍 DEBUG: Final member data:`, JSON.stringify(memberData, null, 2));
+        return memberData;
       }));
 
       // Filter out alumni members and log them
@@ -668,6 +705,9 @@ class TeamMemberSync {
    */
   async createTeamMember(memberData) {
     try {
+      console.log(`🔍 DEBUG: Creating team member for ${memberData.name}`);
+      console.log(`🔍 DEBUG: Raw memberData:`, JSON.stringify(memberData, null, 2));
+      
       const doc = {
         _type: 'teamMember',
         name: memberData.name,
@@ -678,8 +718,11 @@ class TeamMemberSync {
         slackUsername: memberData.slackUsername
       };
 
+      console.log(`🔍 DEBUG: Document before image processing:`, JSON.stringify(doc, null, 2));
+
       // Add profile image if provided (not a default avatar)
       if (memberData.profileImage) {
+        console.log(`🔍 DEBUG: Processing profile image for ${memberData.name}: ${memberData.profileImage}`);
         const uploadedImage = await this.uploadProfileImageToSanity(
           memberData.profileImage, 
           memberData.name
@@ -687,14 +730,24 @@ class TeamMemberSync {
         
         if (uploadedImage) {
           doc.photo = uploadedImage;  // Changed from 'profileImage' to 'photo'
+          console.log(`🔍 DEBUG: Image uploaded successfully for ${memberData.name}`);
+        } else {
+          console.log(`🔍 DEBUG: Image upload failed for ${memberData.name}`);
         }
+      } else {
+        console.log(`🔍 DEBUG: No profile image for ${memberData.name} (default avatar or no image)`);
       }
+
+      console.log(`🔍 DEBUG: Final document to create:`, JSON.stringify(doc, null, 2));
 
       const result = await this.sanity.create(doc);
       console.log(`✅ Created team member: ${memberData.name}`);
+      console.log(`🔍 DEBUG: Sanity response:`, JSON.stringify(result, null, 2));
       return result;
     } catch (error) {
       console.error(`❌ Error creating team member ${memberData.name}:`, error);
+      console.error(`🔍 DEBUG: Error details:`, error.message);
+      console.error(`🔍 DEBUG: Error stack:`, error.stack);
       throw error;
     }
   }
@@ -784,15 +837,20 @@ class TeamMemberSync {
       console.log('➕ Creating all team members from Slack data...');
       for (const memberData of slackData) {
         try {
+          console.log(`🔍 DEBUG: Validating member: ${memberData.name}`);
+          console.log(`🔍 DEBUG: Member data for validation:`, JSON.stringify(memberData, null, 2));
+          
           // Validate required fields
           if (!memberData.name || !memberData.email) {
             console.warn(`⚠️ Skipping member - no name or email provided`);
+            console.log(`🔍 DEBUG: Name: "${memberData.name}", Email: "${memberData.email}"`);
             continue;
           }
           
           // Validate position and department are not empty
           if (!memberData.position || !memberData.department) {
             console.warn(`⚠️ Skipping ${memberData.name} - missing position or department`);
+            console.log(`🔍 DEBUG: Position: "${memberData.position}", Department: "${memberData.department}"`);
             results.errors.push({ 
               name: memberData.name, 
               error: `Missing position (${memberData.position}) or department (${memberData.department})`
@@ -800,6 +858,7 @@ class TeamMemberSync {
             continue;
           }
 
+          console.log(`🔍 DEBUG: Validation passed for ${memberData.name}, proceeding to create`);
           await this.createTeamMember(memberData);
           results.created++;
         } catch (error) {
