@@ -14,6 +14,7 @@
 import { createClient } from '@sanity/client';
 import { google } from 'googleapis';
 import { WebClient } from '@slack/web-api';
+import AVIFConverter from '../tools/avif-converter.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -46,6 +47,9 @@ class ClientSync {
     this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
     this.slackChannel = process.env.SLACK_CHANNEL || '#automation-updates';
     this.slackEnabled = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL);
+    
+    // Initialize AVIF converter
+    this.avifConverter = new AVIFConverter();
   }
 
   /**
@@ -304,14 +308,15 @@ class ClientSync {
         console.log(`   Name: "${name || 'MISSING'}"`);
         console.log(`   Website: "${website || 'MISSING'}"`);
         console.log(`   Industry: "${industry || 'MISSING'}"`);
-        console.log(`   Logo URL: "${logoUrl || 'MISSING'}"`);
+        console.log(`   Logo URL: "${logoUrl || 'N/A (optional)'}"`);
         console.log(`   Country: "${country || 'N/A'}"`);
         console.log(`   Project Type: "${projectType || 'N/A'}"`);
         console.log(`   Cycle: "${cycle || 'N/A'}"`);
         
-        // Only include clients with all required fields (name, website, industry, logo)
-        if (!name || !website || !industry || !logoUrl) {
-          console.warn(`   ❌ SKIPPING: Missing required fields`);
+        // Only include clients with all required fields (name, website, industry)
+        // Logo is optional - client can be synced without logo
+        if (!name || !website || !industry) {
+          console.warn(`   ❌ SKIPPING: Missing required fields (name, website, or industry)`);
           return null;
         }
 
@@ -341,6 +346,7 @@ class ClientSync {
 
     console.log('\n' + '=' .repeat(80));
     console.log(`📊 Summary: Found ${clients.length} valid clients out of ${dataRows.length} rows`);
+    console.log(`📋 Required fields: name, website, industry (logo is optional)`);
     
     if (clients.length > 0) {
       console.log('\n🎯 Clients that will be synced:');
@@ -348,6 +354,7 @@ class ClientSync {
         console.log(`   ${index + 1}. ${client.name} (${client.industry}) - ${client.website}`);
         if (client.country) console.log(`      Country: ${client.country}`);
         if (client.projectType) console.log(`      Project Type: ${client.projectType}`);
+        if (client.logoUrl) console.log(`      Logo: ${client.logoUrl}`);
       });
     }
     
@@ -443,7 +450,7 @@ class ClientSync {
       const syncResults = await this.syncClients(processedData);
 
       console.log('\n🎉 Client sync completed successfully!');
-      console.log(`📊 Summary: ${syncResults.created} created, ${syncResults.updated} updated, ${syncResults.deleted} deleted`);
+      console.log(`📊 Summary: ${syncResults.created} created, ${syncResults.deleted} deleted`);
 
       if (syncResults.errors.length > 0) {
         console.log(`❌ ${syncResults.errors.length} errors occurred`);
@@ -469,7 +476,6 @@ class ClientSync {
         summary: `Synced ${sheetsData.length} clients from Google Sheets to Sanity CMS`,
         results: {
           created: syncResults.created,
-          updated: syncResults.updated,
           deleted: syncResults.deleted,
           processed: sheetsData.length,
           errors: syncResults.errors.length
@@ -518,6 +524,45 @@ class ClientSync {
   }
 
   /**
+   * Upload client logo to Sanity with AVIF conversion
+   */
+  async uploadLogoToSanity(logoUrl, clientName) {
+    if (!logoUrl) {
+      return null;
+    }
+    
+    try {
+      console.log(`📸 Processing logo for ${clientName}...`);
+      
+      // Convert to AVIF using the converter
+      const avifBuffer = await this.avifConverter.convertUrlToAVIF(
+        logoUrl, 
+        `${clientName.replace(/[^a-zA-Z0-9]/g, '_')}_logo`,
+        { quality: 85, effort: 4 }
+      );
+      
+      // Upload to Sanity
+      const asset = await this.sanity.assets.upload('image', avifBuffer, {
+        filename: `${clientName.replace(/[^a-zA-Z0-9]/g, '_')}_logo.avif`,
+        contentType: 'image/avif'
+      });
+      
+      console.log(`✅ Logo uploaded for ${clientName}: ${asset._id}`);
+      
+      return {
+        _type: 'image',
+        asset: {
+          _type: 'reference',
+          _ref: asset._id
+        }
+      };
+    } catch (error) {
+      console.error(`❌ Failed to upload logo for ${clientName}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Get all existing clients from Sanity
    */
   async getExistingClients() {
@@ -557,15 +602,18 @@ class ClientSync {
         cycle: clientData.cycle || ''
       };
 
-      // Add logo if provided (simple URL for now - no AVIF conversion)
-      if (clientData.logoUrl) {
+      // Add logo if provided (with AVIF conversion)
+      if (clientData.logoUrl && clientData.logoUrl.trim()) {
         try {
-          // For now, just store the URL as a string
-          // In a full implementation, you'd upload and convert the image
-          doc.logoUrl = clientData.logoUrl;
+          const logoAsset = await this.uploadLogoToSanity(clientData.logoUrl, clientData.name);
+          if (logoAsset) {
+            doc.logo = logoAsset;
+          }
         } catch (error) {
           console.warn(`⚠️ Logo processing failed for ${clientData.name}: ${error.message}, creating client without logo`);
         }
+      } else {
+        console.log(`ℹ️ No logo provided for ${clientData.name} - creating client without logo`);
       }
 
       const result = await this.sanity.create(doc);
@@ -578,78 +626,52 @@ class ClientSync {
   }
 
   /**
-   * Update an existing client in Sanity
+   * Delete all existing clients from Sanity
    */
-  async updateClient(sanityId, clientData) {
+  async deleteAllClients() {
     try {
-      const updateData = {
-        name: clientData.name,
-        website: clientData.website,
-        industry: clientData.industry,
-        country: clientData.country || '',
-        projectType: clientData.projectType || '',
-        cycle: clientData.cycle || ''
-      };
-
-      // Handle logo: add if provided
-      if (clientData.logoUrl) {
+      console.log('🗑️ Deleting all existing clients from Sanity...');
+      
+      const existingClients = await this.getExistingClients();
+      console.log(`Found ${existingClients.length} existing clients to delete`);
+      
+      let deleted = 0;
+      for (const client of existingClients) {
         try {
-          updateData.logoUrl = clientData.logoUrl;
+          await this.sanity.delete(client._id);
+          deleted++;
+          console.log(`✅ Deleted client: ${client.name}`);
         } catch (error) {
-          console.warn(`⚠️ Logo processing failed for ${clientData.name}: ${error.message}, updating client without logo`);
+          console.error(`❌ Error deleting client ${client.name}:`, error);
         }
       }
-
-      const result = await this.sanity
-        .patch(sanityId)
-        .set(updateData)
-        .commit();
-
-      console.log(`✅ Updated client: ${clientData.name}`);
-      return result;
+      
+      console.log(`🗑️ Deleted ${deleted} clients from Sanity`);
+      return deleted;
     } catch (error) {
-      console.error(`❌ Error updating client ${clientData.name}:`, error);
+      console.error('Error deleting all clients:', error);
       throw error;
     }
   }
 
   /**
-   * Delete a client from Sanity
-   */
-  async deleteClient(sanityId, clientName) {
-    try {
-      await this.sanity.delete(sanityId);
-      console.log(`✅ Deleted client: ${clientName}`);
-      return true;
-    } catch (error) {
-      console.error(`❌ Error deleting client ${clientName}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Sync clients from Google Sheets data
+   * Sync clients from Google Sheets data using delete-and-recreate strategy
    */
   async syncClients(sheetsData) {
     try {
-      const existingClients = await this.getExistingClients();
       const results = {
         created: 0,
-        updated: 0,
         deleted: 0,
         errors: [],
         failedLogos: []
       };
 
-      // Create a map of existing clients by name for easy lookup
-      const existingByName = new Map();
-      existingClients.forEach(client => {
-        if (client.name) {
-          existingByName.set(client.name.toLowerCase(), client);
-        }
-      });
+      // Step 1: Delete all existing clients
+      results.deleted = await this.deleteAllClients();
 
-      // Process each client from Google Sheets
+      // Step 2: Create new clients from Google Sheets data
+      console.log(`📝 Creating ${sheetsData.length} new clients from Google Sheets...`);
+      
       for (const clientData of sheetsData) {
         try {
           if (!clientData.name) {
@@ -657,32 +679,11 @@ class ClientSync {
             continue;
           }
 
-          const existingClient = existingByName.get(clientData.name.toLowerCase());
-          
-          if (existingClient) {
-            // Update existing client
-            await this.updateClient(existingClient._id, clientData);
-            results.updated++;
-            existingByName.delete(clientData.name.toLowerCase());
-          } else {
-            // Create new client
-            await this.createClient(clientData);
-            results.created++;
-          }
+          await this.createClient(clientData);
+          results.created++;
         } catch (error) {
-          console.error(`Error processing ${clientData.name}:`, error);
+          console.error(`Error creating client ${clientData.name}:`, error);
           results.errors.push({ name: clientData.name, error: error.message });
-        }
-      }
-
-      // Delete clients that are no longer in Google Sheets
-      for (const [name, client] of existingByName) {
-        try {
-          await this.deleteClient(client._id, client.name);
-          results.deleted++;
-        } catch (error) {
-          console.error(`Error deleting ${client.name}:`, error);
-          results.errors.push({ name: client.name, error: error.message });
         }
       }
 
@@ -707,7 +708,6 @@ class ClientSync {
     if (results) {
       message += `📈 *Results:*\n`;
       if (results.created) message += `• ✅ Created: ${results.created}\n`;
-      if (results.updated) message += `• 🔄 Updated: ${results.updated}\n`;
       if (results.deleted) message += `• 🗑️ Deleted: ${results.deleted}\n`;
       if (results.processed) message += `• 📊 Processed: ${results.processed}\n`;
       if (results.skipped) message += `• ⏭️ Skipped: ${results.skipped}\n`;
