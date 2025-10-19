@@ -16,6 +16,7 @@ import { createClient } from '@sanity/client';
 import { WebClient } from '@slack/web-api';
 import sharp from 'sharp';
 import dotenv from 'dotenv';
+import AVIFConverter from '../tools/avif-converter.js';
 
 dotenv.config();
 
@@ -42,6 +43,9 @@ class TeamMemberSync {
     this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
     this.slackChannel = process.env.SLACK_CHANNEL || '#automation-updates';
     this.slackEnabled = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL);
+    
+    // Initialize AVIF converter
+    this.avifConverter = new AVIFConverter();
     
     // Valid positions and departments from Sanity schema
     this.validPositions = [
@@ -79,17 +83,17 @@ class TeamMemberSync {
       return { position: '', department: '', isAlumni: true };
     }
 
-    // Remove everything in brackets (if any)
-    const cleanTitle = title.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    // Remove everything in parentheses (project names, etc.)
+    let cleanTitle = title.replace(/\s*\([^)]*\)\s*$/g, '').trim();
     
     // Split by " - " to separate position and department
-    const parts = cleanTitle.split(' - ');
+    const parts = cleanTitle.split(' - ').map(p => p.trim());
     
-    if (parts.length === 2) {
-      const position = parts[0].trim();
-      const department = parts[1].trim();
+    if (parts.length >= 2) {
+      const position = parts[0];
+      const department = parts[1];
       
-      // Special case: President and Vice-President get "Presidency" as department
+      // Special case: President and Vice-President always get "Presidency"
       if (position === 'President' || position === 'Vice-President') {
         return {
           position: position,
@@ -98,7 +102,7 @@ class TeamMemberSync {
         };
       }
       
-      // Special case: Consultant, Senior Consultant, Project Leader get "Consultants" as department
+      // Special case: Consultant roles always get "Consultants"
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
         return {
           position: position,
@@ -113,9 +117,9 @@ class TeamMemberSync {
         isAlumni: false
       };
     } else if (parts.length === 1) {
-      const position = parts[0].trim();
+      const position = parts[0];
       
-      // Special case: President and Vice-President get "Presidency" as department
+      // Handle positions without explicit department
       if (position === 'President' || position === 'Vice-President') {
         return {
           position: position,
@@ -124,7 +128,6 @@ class TeamMemberSync {
         };
       }
       
-      // Special case: Consultant, Senior Consultant, Project Leader get "Consultants" as department
       if (position === 'Consultant' || position === 'Senior Consultant' || position === 'Project Leader') {
         return {
           position: position,
@@ -133,7 +136,6 @@ class TeamMemberSync {
         };
       }
       
-      // If no " - " separator, treat the whole thing as position
       return {
         position: position,
         department: '',
@@ -284,6 +286,43 @@ class TeamMemberSync {
     } catch (error) {
       console.log(`🔍 ${memberName}: Color analysis failed - treating as REAL`);
       return { isDefault: false, method: 'analysis-failed' };
+    }
+  }
+
+  /**
+   * Upload profile image to Sanity with AVIF conversion
+   */
+  async uploadProfileImageToSanity(imageUrl, memberName) {
+    if (!imageUrl) return null;
+    
+    try {
+      console.log(`📸 Processing profile image for ${memberName}...`);
+      
+      // Convert to AVIF using the converter
+      const avifBuffer = await this.avifConverter.convertUrlToAVIF(
+        imageUrl, 
+        `${memberName.replace(/[^a-zA-Z0-9]/g, '_')}_profile`,
+        { quality: 85, effort: 4 }
+      );
+      
+      // Upload to Sanity
+      const asset = await this.sanity.assets.upload('image', avifBuffer, {
+        filename: `${memberName.replace(/[^a-zA-Z0-9]/g, '_')}_profile.avif`,
+        contentType: 'image/avif'
+      });
+      
+      console.log(`✅ Profile image uploaded for ${memberName}: ${asset._id}`);
+      
+      return {
+        _type: 'image',
+        asset: {
+          _type: 'reference',
+          _ref: asset._id
+        }
+      };
+    } catch (error) {
+      console.error(`❌ Failed to upload profile image for ${memberName}:`, error.message);
+      return null;
     }
   }
 
@@ -608,9 +647,9 @@ class TeamMemberSync {
         _id,
         name,
         email,
-        position,
+        role,
         department,
-        profileImage,
+        photo,
         slackId,
         slackUsername
       }`;
@@ -633,20 +672,21 @@ class TeamMemberSync {
         _type: 'teamMember',
         name: memberData.name,
         email: memberData.email,
-        position: memberData.position,
+        role: memberData.position,        // Changed from 'position' to 'role'
         department: memberData.department,
         slackId: memberData.slackId,
         slackUsername: memberData.slackUsername
       };
 
-      // Add profile image if provided
+      // Add profile image if provided (not a default avatar)
       if (memberData.profileImage) {
-        try {
-          // For now, just store the URL as a string
-          // In a full implementation, you'd upload and convert the image
-          doc.profileImageUrl = memberData.profileImage;
-        } catch (error) {
-          console.warn(`⚠️ Profile image processing failed for ${memberData.name}: ${error.message}, creating member without image`);
+        const uploadedImage = await this.uploadProfileImageToSanity(
+          memberData.profileImage, 
+          memberData.name
+        );
+        
+        if (uploadedImage) {
+          doc.photo = uploadedImage;  // Changed from 'profileImage' to 'photo'
         }
       }
 
@@ -667,7 +707,7 @@ class TeamMemberSync {
       const updateData = {
         name: memberData.name,
         email: memberData.email,
-        position: memberData.position,
+        role: memberData.position,        // Changed from 'position' to 'role'
         department: memberData.department,
         slackId: memberData.slackId,
         slackUsername: memberData.slackUsername
@@ -675,10 +715,13 @@ class TeamMemberSync {
 
       // Handle profile image: add if provided
       if (memberData.profileImage) {
-        try {
-          updateData.profileImageUrl = memberData.profileImage;
-        } catch (error) {
-          console.warn(`⚠️ Profile image processing failed for ${memberData.name}: ${error.message}, updating member without image`);
+        const uploadedImage = await this.uploadProfileImageToSanity(
+          memberData.profileImage, 
+          memberData.name
+        );
+        
+        if (uploadedImage) {
+          updateData.photo = uploadedImage;  // Changed from 'profileImage' to 'photo'
         }
       }
 
@@ -741,8 +784,19 @@ class TeamMemberSync {
       console.log('➕ Creating all team members from Slack data...');
       for (const memberData of slackData) {
         try {
+          // Validate required fields
           if (!memberData.name || !memberData.email) {
-            console.warn(`Skipping member - no name or email provided`);
+            console.warn(`⚠️ Skipping member - no name or email provided`);
+            continue;
+          }
+          
+          // Validate position and department are not empty
+          if (!memberData.position || !memberData.department) {
+            console.warn(`⚠️ Skipping ${memberData.name} - missing position or department`);
+            results.errors.push({ 
+              name: memberData.name, 
+              error: `Missing position (${memberData.position}) or department (${memberData.department})`
+            });
             continue;
           }
 
