@@ -795,6 +795,7 @@ class TeamMemberSync {
           // Validate position and department are not empty
           if (!memberData.position || !memberData.department) {
             console.warn(`⚠️ Skipping ${memberData.name} - missing position or department`);
+            console.log(`🔍 DEBUG: Position: "${memberData.position}", Department: "${memberData.department}"`);
             results.errors.push({ 
               name: memberData.name, 
               error: `Missing position (${memberData.position}) or department (${memberData.department})`
