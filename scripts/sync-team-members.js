@@ -250,6 +250,7 @@ class TeamMemberSync {
       'gravatar.com/avatar/00000000000000000000000000000000?d=monsterid',
       'gravatar.com/avatar/00000000000000000000000000000000?d=robohash',
       
+      
       // Generic default avatar patterns
       'default-avatar',
       'default_avatar',
@@ -268,6 +269,16 @@ class TeamMemberSync {
     if (isUrlDefault) {
       console.log(`🔍 ${memberName}: URL pattern match - DEFAULT`);
       return { isDefault: true, method: 'url-pattern' };
+    }
+    
+    // Check for Gravatar URLs with Slack default avatar fallbacks
+    if (imageUrl.includes('gravatar.com/avatar/') || imageUrl.includes('secure.gravatar.com/avatar/')) {
+      // Check if the d= parameter contains a Slack default avatar URL
+      const slackDefaultPattern = /d=https?%3A%2F%2F[a-z0-9.-]*slack-edge\.com%2Fdf10d%2Fimg%2Favatars%2Fava_/i;
+      if (slackDefaultPattern.test(imageUrl)) {
+        console.log(`🔍 ${memberName}: Gravatar with Slack default fallback - DEFAULT`);
+        return { isDefault: true, method: 'gravatar-slack-fallback' };
+      }
     }
     
     console.log(`🔍 ${memberName}: No URL pattern match, proceeding to color analysis`);
