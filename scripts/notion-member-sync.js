@@ -481,6 +481,7 @@ class NotionMemberSync {
   /**
    * Update an existing page in the Notion database
    * Only updates empty fields, never overwrites existing data
+   * Exception: Status column can always be overwritten with latest Google Sheet value
    */
   async updateNotionPage(pageId, memberData) {
     try {
@@ -496,10 +497,11 @@ class NotionMemberSync {
         throw new Error('Failed to get existing page data');
       }
 
-      // Build properties object with ONLY empty fields
+      // Build properties object with empty fields (Status column can always be overwritten)
       const properties = {};
 
       // Map all Google Sheets columns to Notion properties (only if empty in Notion)
+      // Exception: Status column can always be overwritten with latest value from Google Sheet
       Object.keys(memberData).forEach(gsheetColumn => {
         if (gsheetColumn === 'rowIndex') return; // Skip internal fields
         
@@ -508,7 +510,13 @@ class NotionMemberSync {
           propName.toLowerCase() === gsheetColumn.toLowerCase()
         );
         
-        if (notionPropertyName && this.isFieldEmpty(existingPage.properties[notionPropertyName])) {
+        // Allow Status column to be overwritten, other columns only if empty
+        const shouldUpdate = notionPropertyName && (
+          gsheetColumn.toLowerCase() === 'status' || 
+          this.isFieldEmpty(existingPage.properties[notionPropertyName])
+        );
+        
+        if (shouldUpdate) {
           const mappedProperty = this.mapColumnToNotionProperty(gsheetColumn, database.properties, memberData);
           if (mappedProperty) {
             Object.assign(properties, mappedProperty);
