@@ -5,12 +5,14 @@ Collection of automation scripts and tools for 180DC operations.
 ## 🏗️ Project structure
 ```
 180dc-automations/
+├── readai-to-notion/   # Read.ai to Notion Cloudflare Worker
 ├── scripts/            # Automation scripts
 ├── tools/              # Utility tools
 └── package.json        # Dependencies and scripts
 ```
 
 ## 📚 Documentation
+- Read.ai Worker: `readai-to-notion/` (Cloudflare Worker)
 - Scripts: `scripts/README.md`
 - Tools: `tools/README.md`
 

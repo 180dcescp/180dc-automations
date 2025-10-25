@@ -4,7 +4,7 @@
   "description": "Read.ai to Notion worker for Cloudflare Workers",
   "type": "module",
   "scripts": {
-    "deploy": "wrangler deploy --config wrangler-worker.toml"
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@notionhq/client": "^2.3.0",
