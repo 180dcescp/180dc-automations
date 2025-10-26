@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'automation/worker.js'
-      - 'automation/wrangler-worker.toml'
+      - 'readai-to-notion/worker.js'
+      - 'readai-to-notion/wrangler.toml'
   workflow_dispatch:  # Manual trigger capability
   schedule:
     - cron: '0 0 * * *'  # Run every 24 hours at midnight UTC
@@ -22,11 +22,11 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: automation/package-lock.json
+          cache-dependency-path: readai-to-notion/package-lock.json
 
       - name: Install dependencies
         run: |
-          cd automation
+          cd readai-to-notion
           npm install
 
       - name: Deploy Read.ai Worker
@@ -34,8 +34,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          cd automation
-          npx wrangler deploy --config wrangler-worker.toml
+          cd readai-to-notion
+          npx wrangler deploy --config wrangler.toml
 
       - name: Send Slack notification on success
         if: success()
