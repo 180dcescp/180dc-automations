@@ -44,10 +44,9 @@ class SlackChannelsSync {
       
       // Channel configurations
       CHANNELS: {
-        // Executive channels (Department ≠ "Consultants" AND Status = "Active")
+        // All executives (Department ≠ "Consultants" AND Status = "Active")
         EXECUTIVE_CHANNELS: [
           'C07CECJ7LTX',
-          'C097UCTLNHH',
           'G01AJARKC3G',
           'C06KKGWRU10',
           'C08NEBR6N0J',
@@ -56,6 +55,16 @@ class SlackChannelsSync {
           'C097HQ7576K',
           'C09GZ4UST7E'
         ],
+        
+        // Department-specific channels
+        DEPARTMENT_CHANNELS: {
+          // Presidency, Consulting, P&O
+          'C097UCTLNHH': ['Presidency', 'Consulting', 'P&O'],
+          // Presidency, P&O
+          'C07H0G68M4Y': ['Presidency', 'P&O'],
+          // Presidency, Business Development, Consulting
+          'C08UWD5GV6G': ['Presidency', 'Business Development', 'Consulting']
+        },
         
         // Leadership channel (Executives + Project Leaders)
         LEADERSHIP_CHANNEL: 'C07RWMESXRC',
@@ -240,6 +249,7 @@ class SlackChannelsSync {
     // Initialize all channels
     const allChannels = [
       ...this.config.CHANNELS.EXECUTIVE_CHANNELS,
+      ...Object.keys(this.config.CHANNELS.DEPARTMENT_CHANNELS),
       this.config.CHANNELS.LEADERSHIP_CHANNEL,
       this.config.CHANNELS.ACTIVES_CHANNEL
     ];
@@ -268,6 +278,13 @@ class SlackChannelsSync {
           channelMembers[channelId].add(email);
         });
       }
+
+      // Department-specific channels
+      Object.entries(this.config.CHANNELS.DEPARTMENT_CHANNELS).forEach(([channelId, allowedDepartments]) => {
+        if (allowedDepartments.includes(dept)) {
+          channelMembers[channelId].add(email);
+        }
+      });
 
       // Leadership channel: Executives + Project Leaders
       if (dept !== 'Consultants' || position === 'Project Leader') {
