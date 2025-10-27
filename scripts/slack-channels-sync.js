@@ -44,7 +44,7 @@ class SlackChannelsSync {
       
       // Channel configurations
       CHANNELS: {
-        // Executive channels (Department ≠ "Consultant" AND Status = "Active")
+        // Executive channels (Department ≠ "Consultants" AND Status = "Active")
         EXECUTIVE_CHANNELS: [
           'C07CECJ7LTX',
           'C097UCTLNHH',
@@ -262,15 +262,15 @@ class SlackChannelsSync {
         continue;
       }
 
-      // Executive channels: Department ≠ "Consultant"
-      if (dept !== 'Consultant') {
+      // Executive channels: Department ≠ "Consultants"
+      if (dept !== 'Consultants') {
         this.config.CHANNELS.EXECUTIVE_CHANNELS.forEach(channelId => {
           channelMembers[channelId].add(email);
         });
       }
 
       // Leadership channel: Executives + Project Leaders
-      if (dept !== 'Consultant' || position === 'Project Leader') {
+      if (dept !== 'Consultants' || position === 'Project Leader') {
         channelMembers[this.config.CHANNELS.LEADERSHIP_CHANNEL].add(email);
       }
 
@@ -392,6 +392,31 @@ class SlackChannelsSync {
   }
 
   /**
+   * Get user info to check if user is a bot
+   */
+  async getUserInfo(userId) {
+    try {
+      const result = await this.slack.users.info({
+        user: userId
+      });
+      
+      if (result.ok && result.user) {
+        return {
+          id: result.user.id,
+          is_bot: result.user.is_bot || false,
+          is_workflow_bot: result.user.is_workflow_bot || false,
+          deleted: result.user.deleted || false
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn(`⚠️ Error getting user info for ${userId}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Invite users to channel
    */
   async inviteUsersToChannel(channelId, userIds) {
@@ -482,10 +507,33 @@ class SlackChannelsSync {
         await this.sleep(500);
       }
       
-      // Remove users
+      // Remove users (but exclude bots and workflows)
       if (toRemove.length > 0) {
-        await this.removeUsersFromChannel(channelId, toRemove);
-        await this.sleep(500);
+        const filteredToRemove = [];
+        
+        for (const userId of toRemove) {
+          const userInfo = await this.getUserInfo(userId);
+          
+          if (userInfo) {
+            if (userInfo.is_bot || userInfo.is_workflow_bot) {
+              console.log(`🤖 Preserving bot/workflow: ${userId}`);
+              continue;
+            }
+            if (userInfo.deleted) {
+              console.log(`👻 Removing deleted user: ${userId}`);
+            }
+          }
+          
+          filteredToRemove.push(userId);
+        }
+        
+        if (filteredToRemove.length > 0) {
+          console.log(`➖ Actually removing: ${filteredToRemove.length} users (bots/workflows preserved)`);
+          await this.removeUsersFromChannel(channelId, filteredToRemove);
+          await this.sleep(500);
+        } else {
+          console.log(`🤖 No users to remove (all are bots/workflows)`);
+        }
       }
     }
   }

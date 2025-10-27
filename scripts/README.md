@@ -69,7 +69,7 @@ The `slack-channels-sync.js` script:
 
 ### Channel Configuration
 
-- **Executive Channels**: Members where Department ≠ "Consultant" AND Status = "Active"
+- **Executive Channels**: Members where Department ≠ "Consultants" AND Status = "Active"
 - **Leadership Channel**: Executives + Project Leaders (Status = "Active")
 - **Actives Channel**: All members where Status = "Active"
 
