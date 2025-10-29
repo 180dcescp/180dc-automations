@@ -395,6 +395,35 @@ class NotionMemberSync {
   }
 
   /**
+   * Extract an email value from a Notion page by property name
+   */
+  getEmailFromPage(page, propertyName) {
+    try {
+      if (!page || !page.properties) return '';
+      const prop = page.properties[propertyName];
+      if (!prop || prop.type !== 'email') return '';
+      return (prop.email || '').toString().trim();
+    } catch (error) {
+      console.error('❌ Error extracting email from page:', error);
+      return '';
+    }
+  }
+
+  /**
+   * Get primary emails from member row data in order of preference
+   * 1) Email 180
+   * 2) Email ESCP
+   */
+  getMemberPrimaryEmails(memberData) {
+    const emails = [];
+    const email180 = (memberData['Email 180'] || '').toString().trim();
+    const emailEscp = (memberData['Email ESCP'] || '').toString().trim();
+    if (email180) emails.push(email180);
+    if (emailEscp) emails.push(emailEscp);
+    return emails;
+  }
+
+  /**
    * Create a page in the Notion database
    */
   async createNotionPage(memberData) {
@@ -436,7 +465,8 @@ class NotionMemberSync {
         properties
       };
 
-      console.log(`📝 Creating page for ${memberData.name} with projects:`, memberData.projects);
+      const memberName = (memberData['Full Name'] || memberData['Name'] || '').toString().trim();
+      console.log(`📝 Creating page for ${memberName}`);
 
       const response = await fetch(`${this.notionApiBase}/pages`, {
         method: 'POST',
@@ -450,30 +480,27 @@ class NotionMemberSync {
 
       if (response.ok) {
         const result = await response.json();
-        console.log(`✅ Created page for ${memberData.name}:`, result.id);
+        console.log(`✅ Created page for ${memberName}:`, result.id);
         
         // Try to set Slack profile picture as cover
-        // Look for any email field that might contain the 180 email
-        const emailField = Object.keys(memberData).find(key => 
-          key.toLowerCase().includes('email') && 
-          memberData[key] && 
-          memberData[key].toString().trim()
-        );
-        if (emailField) {
-          const profilePicture = await this.getSlackProfilePicture(memberData[emailField]);
+        const primaryEmails = this.getMemberPrimaryEmails(memberData);
+        for (const email of primaryEmails) {
+          const profilePicture = await this.getSlackProfilePicture(email);
           if (profilePicture) {
             await this.setNotionPageCover(result.id, profilePicture);
+            break;
           }
         }
         
         return result;
       } else {
         const error = await response.text();
-        console.error(`❌ Failed to create page: ${error}`);
+        console.error(`❌ Failed to create page for ${memberName}: ${error}`);
         return null;
       }
     } catch (error) {
-      console.error(`❌ Error creating page for ${memberData.name}:`, error);
+      const memberName = (memberData['Full Name'] || memberData['Name'] || '').toString().trim();
+      console.error(`❌ Error creating page for ${memberName}:`, error);
       return null;
     }
   }
@@ -541,7 +568,8 @@ class NotionMemberSync {
         return { id: pageId }; // Return existing page ID
       }
 
-      console.log(`📝 Updating page for ${memberData.name} with ${Object.keys(properties).length} fields`);
+      const memberName = (memberData['Full Name'] || memberData['Name'] || '').toString().trim();
+      console.log(`📝 Updating page for ${memberName} with ${Object.keys(properties).length} fields`);
 
       const response = await fetch(`${this.notionApiBase}/pages/${pageId}`, {
         method: 'PATCH',
@@ -555,30 +583,27 @@ class NotionMemberSync {
 
       if (response.ok) {
         const result = await response.json();
-        console.log(`✅ Updated page for ${memberData.name}:`, result.id);
+        console.log(`✅ Updated page for ${memberName}:`, result.id);
         
         // Try to set Slack profile picture as cover
-        // Look for any email field that might contain the 180 email
-        const emailField = Object.keys(memberData).find(key => 
-          key.toLowerCase().includes('email') && 
-          memberData[key] && 
-          memberData[key].toString().trim()
-        );
-        if (emailField) {
-          const profilePicture = await this.getSlackProfilePicture(memberData[emailField]);
+        const primaryEmails = this.getMemberPrimaryEmails(memberData);
+        for (const email of primaryEmails) {
+          const profilePicture = await this.getSlackProfilePicture(email);
           if (profilePicture) {
             await this.setNotionPageCover(result.id, profilePicture);
+            break;
           }
         }
         
         return result;
       } else {
         const error = await response.text();
-        console.error(`❌ Failed to update page: ${error}`);
+        console.error(`❌ Failed to update page for ${memberName}: ${error}`);
         return null;
       }
     } catch (error) {
-      console.error(`❌ Error updating page for ${memberData.name}:`, error);
+      const memberName = (memberData['Full Name'] || memberData['Name'] || '').toString().trim();
+      console.error(`❌ Error updating page for ${memberName}:`, error);
       return null;
     }
   }
@@ -800,6 +825,14 @@ class NotionMemberSync {
       // Get existing pages to check for updates
       const existingPages = await this.getExistingPages();
       const existingMemberNames = existingPages.map(page => this.getMemberNameFromPage(page));
+      // Build a map of existing pages by Email 180 for exact matching
+      const existingByEmail180 = new Map();
+      for (const page of existingPages) {
+        const email180 = (this.getEmailFromPage(page, 'Email 180') || '').toLowerCase();
+        if (email180) {
+          existingByEmail180.set(email180, page);
+        }
+      }
 
       let successCount = 0;
       let errorCount = 0;
@@ -820,11 +853,12 @@ class NotionMemberSync {
 
           console.log(`📊 Processing member: ${memberName} (Status: ${memberData.Status || 'Unknown'})`);
 
-          // Check if member already exists
-          const existingPage = existingPages.find(page => {
-            const pageName = this.getMemberNameFromPage(page);
-            return pageName === memberName;
-          });
+          // Check if member already exists by Email 180 (preferred)
+          const email180Key = (memberData['Email 180'] || '').toString().trim().toLowerCase();
+          let existingPage = null;
+          if (email180Key) {
+            existingPage = existingByEmail180.get(email180Key) || null;
+          }
 
           if (existingPage) {
             // Update existing page
@@ -832,9 +866,9 @@ class NotionMemberSync {
             if (result) {
               successCount++;
               updatedCount++;
-              console.log(`✅ Successfully updated page for ${memberData.name}`);
+              console.log(`✅ Successfully updated page for ${memberName}`);
             } else {
-              console.log(`❌ Failed to update page for ${memberData.name}`);
+              console.log(`❌ Failed to update page for ${memberName}`);
               errorCount++;
             }
           } else {
@@ -843,9 +877,9 @@ class NotionMemberSync {
             if (result) {
               successCount++;
               createdCount++;
-              console.log(`✅ Successfully created page for ${memberData.name}`);
+              console.log(`✅ Successfully created page for ${memberName}`);
             } else {
-              console.log(`❌ Failed to create page for ${memberData.name}`);
+              console.log(`❌ Failed to create page for ${memberName}`);
               errorCount++;
             }
           }
