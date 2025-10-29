@@ -420,18 +420,28 @@ class NotionClientSync {
       // For updates, skip properties that already have values (add-only logic)
       if (isUpdate && existingProps[propName]) {
         const existingValue = existingProps[propName];
-        // Check if the existing value is not empty
-        if (existingValue && 
-            (existingValue.title?.[0]?.text?.content?.trim() || 
-             existingValue.rich_text?.[0]?.text?.content?.trim() ||
-             existingValue.url?.trim() ||
-             existingValue.email?.trim() ||
-             existingValue.number !== null ||
-             existingValue.select?.name?.trim() ||
-             existingValue.multi_select?.length > 0 ||
-             existingValue.files?.length > 0 ||
-             existingValue.phone_number?.trim() ||
-             existingValue.date?.start)) {
+        // Type-aware non-empty check to avoid false positives (e.g. undefined !== null on number)
+        const hasValue = Boolean(
+          // title
+          (Array.isArray(existingValue.title) && existingValue.title[0]?.text?.content?.trim()) ||
+          // rich_text
+          (Array.isArray(existingValue.rich_text) && existingValue.rich_text[0]?.text?.content?.trim()) ||
+          // url/email/phone
+          (typeof existingValue.url === 'string' && existingValue.url.trim()) ||
+          (typeof existingValue.email === 'string' && existingValue.email.trim()) ||
+          (typeof existingValue.phone_number === 'string' && existingValue.phone_number.trim()) ||
+          // number (ensure key exists and is a number)
+          (Object.prototype.hasOwnProperty.call(existingValue, 'number') && typeof existingValue.number === 'number' && !Number.isNaN(existingValue.number)) ||
+          // select
+          (existingValue.select && typeof existingValue.select.name === 'string' && existingValue.select.name.trim()) ||
+          // multi_select
+          (Array.isArray(existingValue.multi_select) && existingValue.multi_select.length > 0) ||
+          // files
+          (Array.isArray(existingValue.files) && existingValue.files.length > 0) ||
+          // date
+          (existingValue.date && existingValue.date.start)
+        );
+        if (hasValue) {
           console.log(`⏭️ Skipping "${propName}" - already has value`);
           continue;
         }
