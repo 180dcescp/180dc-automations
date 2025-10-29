@@ -356,8 +356,6 @@ class NotionMemberSync {
    */
   async getDatabaseSchema() {
     try {
-      console.log('🔍 Getting database schema...');
-      
       const response = await fetch(`${this.notionApiBase}/databases/${this.notionDatabaseId}`, {
         method: 'GET',
         headers: {
@@ -368,20 +366,6 @@ class NotionMemberSync {
 
       if (response.ok) {
         const database = await response.json();
-        console.log('✅ Database found!');
-        console.log('📋 Database Title:', database.title[0]?.text?.content || 'Untitled');
-        console.log('\n📊 Database Properties:');
-        
-        Object.entries(database.properties).forEach(([key, property]) => {
-          console.log(`  • ${key}: ${property.type}`);
-          if (property.type === 'select' && property.select?.options) {
-            console.log(`    Options: ${property.select.options.map(opt => opt.name).join(', ')}`);
-          }
-          if (property.type === 'multi_select' && property.multi_select?.options) {
-            console.log(`    Options: ${property.multi_select.options.map(opt => opt.name).join(', ')}`);
-          }
-        });
-        
         return database;
       } else {
         const error = await response.text();
@@ -424,39 +408,76 @@ class NotionMemberSync {
   }
 
   /**
+   * Delete (archive) all pages in the Notion database
+   */
+  async deleteAllNotionPages() {
+    try {
+      let startCursor = undefined;
+      let total = 0;
+      do {
+        const response = await fetch(`${this.notionApiBase}/databases/${this.notionDatabaseId}/query`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.notionToken}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': this.notionApiVersion
+        },
+          body: JSON.stringify({ start_cursor: startCursor })
+        });
+
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('❌ Failed to list pages for deletion:', error);
+          return false;
+        }
+
+        const result = await response.json();
+        const pages = result.results || [];
+        for (const page of pages) {
+          await fetch(`${this.notionApiBase}/pages/${page.id}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${this.notionToken}`,
+              'Content-Type': 'application/json',
+              'Notion-Version': this.notionApiVersion
+            },
+            body: JSON.stringify({ archived: true })
+          });
+          total++;
+        }
+
+        startCursor = result.has_more ? result.next_cursor : undefined;
+      } while (startCursor);
+
+      return true;
+    } catch (error) {
+      console.error('❌ Error deleting all pages:', error);
+      return false;
+    }
+  }
+
+  /**
    * Create a page in the Notion database
    */
   async createNotionPage(memberData) {
     try {
-      // Get database schema first to understand available properties
+      // Build properties dynamically based on available columns
+      const properties = {};
+      
+      // Map all Google Sheets columns to Notion properties
       const database = await this.getDatabaseSchema();
       if (!database) {
         throw new Error('Failed to get database schema');
       }
 
-      // Build properties dynamically based on available columns
-      const properties = {};
-      
-      // Map all Google Sheets columns to Notion properties
       Object.keys(memberData).forEach(gsheetColumn => {
         if (gsheetColumn === 'rowIndex') return; // Skip internal fields
         
-        const mappedProperty = this.mapColumnToNotionProperty(gsheetColumn, database.properties, memberData);
-        if (mappedProperty) {
-          Object.assign(properties, mappedProperty);
+          const mappedProperty = this.mapColumnToNotionProperty(gsheetColumn, database.properties, memberData);
+          if (mappedProperty) {
+            Object.assign(properties, mappedProperty);
         }
       });
-
-      // Always set Archive to "Not Archived" for new pages
-      const archiveProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'select' && 
-        key.toLowerCase().includes('archive')
-      );
-      if (archiveProperty) {
-        properties[archiveProperty] = {
-          select: { name: "Not Archived" }
-        };
-      }
 
       const pageData = {
         parent: {
@@ -466,7 +487,7 @@ class NotionMemberSync {
       };
 
       const memberName = (memberData['Full Name'] || memberData['Name'] || '').toString().trim();
-      console.log(`📝 Creating page for ${memberName}`);
+      console.log(`📝 Processing member: ${memberName}`);
 
       const response = await fetch(`${this.notionApiBase}/pages`, {
         method: 'POST',
@@ -480,8 +501,6 @@ class NotionMemberSync {
 
       if (response.ok) {
         const result = await response.json();
-        console.log(`✅ Created page for ${memberName}:`, result.id);
-        
         // Try to set Slack profile picture as cover
         const primaryEmails = this.getMemberPrimaryEmails(memberData);
         for (const email of primaryEmails) {
@@ -511,101 +530,8 @@ class NotionMemberSync {
    * Exception: Status column can always be overwritten with latest Google Sheet value
    */
   async updateNotionPage(pageId, memberData) {
-    try {
-      // Get database schema to understand property names
-      const database = await this.getDatabaseSchema();
-      if (!database) {
-        throw new Error('Failed to get database schema');
-      }
-
-      // Fetch existing page data to check for empty fields
-      const existingPage = await this.getExistingPageData(pageId);
-      if (!existingPage) {
-        throw new Error('Failed to get existing page data');
-      }
-
-      // Build properties object with empty fields (Status column can always be overwritten)
-      const properties = {};
-
-      // Map all Google Sheets columns to Notion properties (only if empty in Notion)
-      // Exception: Status column can always be overwritten with latest value from Google Sheet
-      Object.keys(memberData).forEach(gsheetColumn => {
-        if (gsheetColumn === 'rowIndex') return; // Skip internal fields
-        
-        // Find matching Notion property
-        const notionPropertyName = Object.keys(database.properties).find(propName => 
-          propName.toLowerCase() === gsheetColumn.toLowerCase()
-        );
-        
-        // Allow Status column to be overwritten, other columns only if empty
-        const shouldUpdate = notionPropertyName && (
-          gsheetColumn.toLowerCase() === 'status' || 
-          this.isFieldEmpty(existingPage.properties[notionPropertyName])
-        );
-        
-        if (shouldUpdate) {
-          const mappedProperty = this.mapColumnToNotionProperty(gsheetColumn, database.properties, memberData);
-          if (mappedProperty) {
-            Object.assign(properties, mappedProperty);
-          }
-        }
-      });
-
-      // Always set Archive to "Not Archived" for matched members
-      const archiveProperty = Object.keys(database.properties).find(key => 
-        database.properties[key].type === 'select' && 
-        key.toLowerCase().includes('archive')
-      );
-      if (archiveProperty) {
-        properties[archiveProperty] = {
-          select: { name: "Not Archived" }
-        };
-      }
-
-      // Only proceed if there are properties to update
-      if (Object.keys(properties).length === 0) {
-        console.log(`⏭️ No empty fields to update for ${memberData.name}`);
-        return { id: pageId }; // Return existing page ID
-      }
-
-      const memberName = (memberData['Full Name'] || memberData['Name'] || '').toString().trim();
-      console.log(`📝 Updating page for ${memberName} with ${Object.keys(properties).length} fields`);
-
-      const response = await fetch(`${this.notionApiBase}/pages/${pageId}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${this.notionToken}`,
-          'Content-Type': 'application/json',
-          'Notion-Version': this.notionApiVersion
-        },
-        body: JSON.stringify({ properties })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log(`✅ Updated page for ${memberName}:`, result.id);
-        
-        // Try to set Slack profile picture as cover
-        const primaryEmails = this.getMemberPrimaryEmails(memberData);
-        for (const email of primaryEmails) {
-          const profilePicture = await this.getSlackProfilePicture(email);
-          if (profilePicture) {
-            await this.setNotionPageCover(result.id, profilePicture);
-            break;
-          }
-        }
-        
-        return result;
-      } else {
-        const error = await response.text();
-        console.error(`❌ Failed to update page for ${memberName}: ${error}`);
-        return null;
-      }
-    } catch (error) {
-      const memberName = (memberData['Full Name'] || memberData['Name'] || '').toString().trim();
-      console.error(`❌ Error updating page for ${memberName}:`, error);
-      return null;
-    }
+    // No-op in destructive rebuild mode
+    return { id: pageId };
   }
 
   /**
@@ -693,33 +619,7 @@ class NotionMemberSync {
    * Set the Archive select field instead of archiving the page
    */
   async setArchiveStatus(pageId, status) {
-    try {
-      const response = await fetch(`${this.notionApiBase}/pages/${pageId}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${this.notionToken}`,
-          'Content-Type': 'application/json',
-          'Notion-Version': this.notionApiVersion
-        },
-        body: JSON.stringify({
-          properties: {
-            'Archive': { select: { name: status } }
-          }
-        })
-      });
-      
-      if (response.ok) {
-        console.log(`📋 Set Archive status to "${status}" for page: ${pageId}`);
-        return true;
-      } else {
-        const error = await response.text();
-        console.error(`❌ Failed to set Archive status for page ${pageId}: ${error}`);
-        return false;
-      }
-    } catch (error) {
-      console.error(`❌ Error setting Archive status for page ${pageId}:`, error);
-      return false;
-    }
+    return true; // Deprecated in destructive mode
   }
 
   /**
@@ -822,21 +722,32 @@ class NotionMemberSync {
       // Read member data
       const { members, columnIndices } = await this.readMembers();
       
-      // Get existing pages to check for updates
-      const existingPages = await this.getExistingPages();
-      const existingMemberNames = existingPages.map(page => this.getMemberNameFromPage(page));
-      // Build a map of existing pages by Email 180 for exact matching
-      const existingByEmail180 = new Map();
-      for (const page of existingPages) {
-        const email180 = (this.getEmailFromPage(page, 'Email 180') || '').toLowerCase();
-        if (email180) {
-          existingByEmail180.set(email180, page);
-        }
+      // Read Notion schema once
+      const database = await this.getDatabaseSchema();
+      if (!database) {
+        throw new Error('Failed to load Notion database schema');
       }
+
+      // Delete all pages before full rebuild
+      await this.deleteAllNotionPages();
+
+      // Build case-insensitive header→property mapping
+      const sheetHeaders = Object.keys(columnIndices);
+      const notionProps = Object.keys(database.properties);
+      const headerToProp = {};
+      for (const prop of notionProps) {
+        const match = sheetHeaders.find(h => h.toLowerCase() === prop.toLowerCase());
+        if (match) headerToProp[match] = prop;
+      }
+
+      // Print concise header mapping
+      console.log('🔗 Header mapping (Notion ← Sheet):');
+      Object.entries(headerToProp).forEach(([sheetHeader, notionProp]) => {
+        console.log(`  ${notionProp} ← ${sheetHeader}`);
+      });
 
       let successCount = 0;
       let errorCount = 0;
-      let updatedCount = 0;
       let createdCount = 0;
 
       // Process each member
@@ -851,37 +762,14 @@ class NotionMemberSync {
             continue;
           }
 
-          console.log(`📊 Processing member: ${memberName} (Status: ${memberData.Status || 'Unknown'})`);
-
-          // Check if member already exists by Email 180 (preferred)
-          const email180Key = (memberData['Email 180'] || '').toString().trim().toLowerCase();
-          let existingPage = null;
-          if (email180Key) {
-            existingPage = existingByEmail180.get(email180Key) || null;
-          }
-
-          if (existingPage) {
-            // Update existing page
-            const result = await this.updateNotionPage(existingPage.id, memberData);
-            if (result) {
-              successCount++;
-              updatedCount++;
-              console.log(`✅ Successfully updated page for ${memberName}`);
-            } else {
-              console.log(`❌ Failed to update page for ${memberName}`);
-              errorCount++;
-            }
-          } else {
-            // Create new page
+          // Create new page (rebuild mode)
             const result = await this.createNotionPage(memberData);
             if (result) {
               successCount++;
               createdCount++;
-              console.log(`✅ Successfully created page for ${memberName}`);
             } else {
-              console.log(`❌ Failed to create page for ${memberName}`);
+            console.log(`❌ Failed to create page for ${memberName}`);
               errorCount++;
-            }
           }
 
           // Add a small delay to avoid rate limiting
@@ -893,34 +781,10 @@ class NotionMemberSync {
         }
       }
 
-      // Clean up: Set Archive status for members that don't exist in the Google Sheet
-      console.log('\n🧹 Cleaning up: Checking for members to archive...');
-      const sheetMemberNames = members
-        .filter(member => {
-          const name = member['Full Name'] || member['Name'] || '';
-          return name.toString().trim();
-        })
-        .map(member => (member['Full Name'] || member['Name'] || '').toString().trim());
-      
-      let archivedCount = 0;
-      for (const page of existingPages) {
-        const pageName = this.getMemberNameFromPage(page);
-        if (pageName && !sheetMemberNames.includes(pageName)) {
-          try {
-            await this.setArchiveStatus(page.id, "Archived");
-            archivedCount++;
-          } catch (error) {
-            console.error(`❌ Error setting Archive status for ${pageName}:`, error);
-          }
-        }
-      }
-
       console.log(`\n🎉 Notion Member Database Sync completed!`);
       console.log(`📊 Summary:`);
       console.log(`  ✅ Successfully processed: ${successCount} members`);
       console.log(`  🆕 Created: ${createdCount} new members`);
-      console.log(`  🔄 Updated: ${updatedCount} existing members`);
-      console.log(`  🗑️ Archived: ${archivedCount} members not in sheet`);
       console.log(`  ❌ Errors: ${errorCount} members`);
 
     } catch (error) {
