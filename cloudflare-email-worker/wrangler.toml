@@ -1,0 +1,11 @@
+name = "cloudflare-email-worker"
+main = "index.ts"
+compatibility_date = "2024-01-01"
+
+# Enable comprehensive logging
+[observability]
+enabled = true
+
+# Environment variables (set via wrangler secret put)
+[vars]
+# Add GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, MEMBER_SHEET_ID, EXEC_EMAIL_RANGE as secrets/envs
