@@ -1,0 +1,49 @@
+name: Email Forward and Auto-Reply (Hourly)
+
+on:
+  schedule:
+    - cron: '0 * * * *' # every hour
+  workflow_dispatch:
+    inputs:
+      list_execs_only:
+        description: 'List exec recipients only (no email activity)'
+        required: false
+        default: 'false'
+
+jobs:
+  run-email-forwarder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Execute email forward + auto-reply
+        env:
+          # Google Sheets (service account)
+          GSHEET_CLIENT_EMAIL: ${{ secrets.GSHEET_CLIENT_EMAIL }}
+          GSHEET_PRIVATE_KEY: ${{ secrets.GSHEET_PRIVATE_KEY }}
+          GSHEET_PROJECT_ID: ${{ secrets.GSHEET_PROJECT_ID }}
+          GSHEET_SHEET_ID: ${{ secrets.GSHEET_SHEET_ID }}
+          GSHEET_EMAIL_RANGE: ${{ secrets.GSHEET_EMAIL_RANGE }}
+
+          # Gmail (domain-wide delegation service account)
+          GMAIL_CLIENT_EMAIL: ${{ secrets.GMAIL_CLIENT_EMAIL }}
+          GMAIL_PRIVATE_KEY: ${{ secrets.GMAIL_PRIVATE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+
+          # Testing/operational
+          TEST_FORWARD_EMAIL: ${{ secrets.TEST_FORWARD_EMAIL }}
+          MAX_MESSAGES: ${{ secrets.MAX_MESSAGES }}
+          LIST_EXEC_RECIPIENTS: ${{ github.event.inputs.list_execs_only == 'true' && '1' || '' }}
+        run: |
+          node scripts/email-forward-and-reply.js
+
+
