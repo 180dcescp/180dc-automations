@@ -456,7 +456,12 @@ async function createMeetingPage(meetingData, NOTION_TOKEN, MEETING_DATABASE_ID)
     // Add Type field detection (Project or Exec) - case insensitive
     if (meetingData.title) {
       const lowerTitle = meetingData.title.toLowerCase();
-      if (lowerTitle.includes('(project)') || lowerTitle.includes('(projects)')) {
+      // Check for (project) or (projects) in brackets
+      const hasBracketProject = lowerTitle.includes('(project)') || lowerTitle.includes('(projects)');
+      // Check for whole-word "project" or "projects" anywhere in title
+      const hasWholeWordProject = /\bproject\b/i.test(meetingData.title) || /\bprojects\b/i.test(meetingData.title);
+      
+      if (hasBracketProject || hasWholeWordProject) {
         pageData.properties['Type'] = {
           select: { name: 'Project' }
         };
