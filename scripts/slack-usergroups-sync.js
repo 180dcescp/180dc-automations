@@ -43,20 +43,13 @@ class SlackUsergroupsSync {
       COL_PROJECTS: 'Projects',
       COL_CAMPUS: 'Campus',
       
-      // Fixed Slack handles
+      // Fixed Slack handles (only truly fixed groups)
       HANDLE_ACTIVE: 'actives',
       HANDLE_ALUMNI: 'alumni',
-      HANDLE_CONSULTANTS: 'consultants',
-      HANDLE_CONSULTING: 'consulting',
-      HANDLE_EVENTS: 'events',
-      HANDLE_FINANCE: 'finance',
-      HANDLE_MARKETING: 'marketing',
-      HANDLE_PEOPLE_ORG: 'people-organisation',
-      HANDLE_BUS_DEV: 'business-development',
       HANDLE_PVP: 'p-vp',
       HANDLE_PL: 'project-leaders',
       HANDLE_LEADERSHIP: 'leadership',
-      
+
       // Settings
       MANAGE_LEADERSHIP: true,
       DEPT_ONLY_ACTIVE: true,
@@ -64,13 +57,6 @@ class SlackUsergroupsSync {
       PROJECTS_REQUIRE_ACTIVE: true,
       MANAGE_CAMPUS_GROUPS: true,
       CAMPUS_REQUIRE_ACTIVE: true,
-      
-      // Fixed groups that should never be auto-disabled
-      FIXED_HANDLES: [
-        'actives', 'alumni', 'consultants', 'consulting', 'events', 'finance',
-        'marketing', 'people-organisation', 'business-development', 'p-vp',
-        'project-leaders', 'leadership'
-      ],
       
       // Rate limiting
       LOOKUP_BATCH_SIZE: 40,
@@ -255,23 +241,20 @@ class SlackUsergroupsSync {
       return groupsByHandle[handle];
     };
 
-    // Initialize fixed handles
+    // Initialize only truly fixed handles (role-based, not department-based)
     const fixedHandles = [
-      this.config.HANDLE_ACTIVE, this.config.HANDLE_ALUMNI, this.config.HANDLE_CONSULTANTS,
-      this.config.HANDLE_CONSULTING, this.config.HANDLE_EVENTS, this.config.HANDLE_FINANCE,
-      this.config.HANDLE_MARKETING, this.config.HANDLE_PEOPLE_ORG, this.config.HANDLE_BUS_DEV,
+      this.config.HANDLE_ACTIVE, this.config.HANDLE_ALUMNI,
       this.config.HANDLE_PVP, this.config.HANDLE_PL, this.config.HANDLE_LEADERSHIP
     ];
-    
+
     fixedHandles.forEach(handle => ensure(this.slugWithPrefix(handle)));
 
     const actives = new Set();
     const others = new Set();
-    const dynamicHandles = new Set();
 
     for (const member of members) {
       const { email, dept, position, status, projects, campus } = member;
-      
+
       if (status.toLowerCase() === 'alumni') {
         // Alumni rule: ONLY in @alumni; excluded from all other groups
         ensure(this.slugWithPrefix(this.config.HANDLE_ALUMNI)).add(email);
@@ -283,16 +266,12 @@ class SlackUsergroupsSync {
       actives.add(email);
       ensure(this.slugWithPrefix(this.config.HANDLE_ACTIVE)).add(email);
 
-      // Departments (actives only unless configured otherwise)
+      // Dynamic department groups (derived from sheet data)
       if (!this.config.DEPT_ONLY_ACTIVE || status.toLowerCase() === 'active') {
-        if (dept === 'Business Development') ensure(this.slugWithPrefix(this.config.HANDLE_BUS_DEV)).add(email);
-        if (dept === 'Consulting') ensure(this.slugWithPrefix(this.config.HANDLE_CONSULTING)).add(email);
-        if (dept === 'Consultants') ensure(this.slugWithPrefix(this.config.HANDLE_CONSULTANTS)).add(email);
-        if (dept === 'Events') ensure(this.slugWithPrefix(this.config.HANDLE_EVENTS)).add(email);
-        if (dept === 'Finance') ensure(this.slugWithPrefix(this.config.HANDLE_FINANCE)).add(email);
-        if (dept === 'Marketing') ensure(this.slugWithPrefix(this.config.HANDLE_MARKETING)).add(email);
-        if (dept === 'P&O') ensure(this.slugWithPrefix(this.config.HANDLE_PEOPLE_ORG)).add(email);
-        if (dept === 'Presidency') ensure(this.slugWithPrefix(this.config.HANDLE_PVP)).add(email);
+        if (dept) {
+          const deptHandle = this.slugWithPrefix(this.slugify(dept));
+          ensure(deptHandle).add(email);
+        }
       }
 
       // Roles (actives only)
@@ -300,9 +279,9 @@ class SlackUsergroupsSync {
       if (dept === 'Presidency' || position === 'President' || position === 'Vice-President') {
         ensure(this.slugWithPrefix(this.config.HANDLE_PVP)).add(email);
       }
-      
+
       if (this.config.MANAGE_LEADERSHIP) {
-        const isLeadership = dept === 'Presidency' || position === 'President' || 
+        const isLeadership = dept === 'Presidency' || position === 'President' ||
                             position === 'Vice-President' || position.startsWith('Head of') ||
                             position === 'Associate Director';
         if (isLeadership) ensure(this.slugWithPrefix(this.config.HANDLE_LEADERSHIP)).add(email);
@@ -315,7 +294,6 @@ class SlackUsergroupsSync {
           for (const project of projectList) {
             const handle = this.slugWithPrefix(this.slugify(project));
             ensure(handle).add(email);
-            dynamicHandles.add(handle);
           }
         }
       }
@@ -325,7 +303,6 @@ class SlackUsergroupsSync {
         if (campus) {
           const handle = this.slugWithPrefix(this.slugify(campus));
           ensure(handle).add(email);
-          dynamicHandles.add(handle);
         }
       }
     }
@@ -334,10 +311,10 @@ class SlackUsergroupsSync {
     const summary = Object.fromEntries(
       Object.entries(groupsByHandle).map(([h, set]) => [h, set.size])
     );
-    
+
     console.log(`📊 Group sizes (pre-resolve): ${JSON.stringify(summary)}`);
-    
-    return { groupsByHandle, priorityEmails, dynamicHandles };
+
+    return { groupsByHandle, priorityEmails };
   }
 
   /**
@@ -564,7 +541,7 @@ class SlackUsergroupsSync {
       console.log(`📊 Loaded ${members.length} members from sheet`);
       
       // Build targets
-      const { groupsByHandle, priorityEmails, dynamicHandles } = this.buildTargets(members);
+      const { groupsByHandle, priorityEmails } = this.buildTargets(members);
       
       if (this.dryRun) {
         console.log('🧪 DRY RUN MODE - No changes will be made');
@@ -579,25 +556,38 @@ class SlackUsergroupsSync {
       const desiredHandles = Object.keys(groupsByHandle);
       const handleToId = await this.ensureUsergroups(desiredHandles);
       
-      // Disable empty dynamic usergroups
+      // Disable usergroups that are empty or only contain alumni
       const existing = await this.listAllUsergroups();
-      const fixedSet = new Set(this.config.FIXED_HANDLES.map(h => this.slugWithPrefix(h)));
-      
-      const existingDynamicHandles = Object.keys(existing).filter(h => {
-        if (this.config.GROUP_PREFIX) {
-          return h.startsWith(this.config.GROUP_PREFIX) && !fixedSet.has(h);
+      const alumniHandle = this.slugWithPrefix(this.config.HANDLE_ALUMNI);
+
+      // Find usergroups to disable: those with no active members (empty or alumni-only)
+      const toDisable = [];
+      for (const [handle, info] of Object.entries(existing)) {
+        // Skip if already disabled
+        if (info.date_delete && info.date_delete > 0) continue;
+
+        // Check if this group has any non-alumni members
+        const groupEmails = groupsByHandle[handle] ? [...groupsByHandle[handle]] : [];
+        const hasActiveMembers = groupEmails.some(email => {
+          const user = emailToUser[email];
+          return user && user.id;
+        });
+
+        // If the group is empty or the handle is not in our desired groups, disable it
+        // Exception: don't disable @alumni if it has members
+        if (handle === alumniHandle) continue;
+
+        if (!hasActiveMembers || !desiredHandles.includes(handle)) {
+          toDisable.push(handle);
         }
-        return !fixedSet.has(h);
-      });
-      
-      const desiredDynamic = new Set(dynamicHandles);
-      const toDisable = existingDynamicHandles.filter(h => !desiredDynamic.has(h));
-      
+      }
+
       if (toDisable.length > 0) {
-        console.log(`🗑️ Disabling ${toDisable.length} empty dynamic usergroups`);
+        console.log(`🗑️ Disabling ${toDisable.length} empty/inactive usergroups`);
         for (const handle of toDisable) {
           const id = existing[handle]?.id;
           if (id) {
+            console.log(`  - Disabling: ${handle}`);
             await this.disableUsergroup(id);
             await this.sleep(150);
           }

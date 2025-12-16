@@ -286,11 +286,6 @@ class SlackChannelsSync {
         }
       });
 
-      // Add Head of Events to C08UWD5GV6G
-      if (position.toLowerCase().includes('head of') && dept.toLowerCase() === 'events') {
-        channelMembers['C08UWD5GV6G'].add(email);
-      }
-
       // Leadership channel: Executives + Project Leaders
       if (dept !== 'Consultants' || position === 'Project Leader') {
         channelMembers[this.config.CHANNELS.LEADERSHIP_CHANNEL].add(email);
