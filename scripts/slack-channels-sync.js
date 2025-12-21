@@ -58,10 +58,10 @@ class SlackChannelsSync {
         
         // Department-specific channels
         DEPARTMENT_CHANNELS: {
-          // Presidency, Consulting, P&O
-          'C097UCTLNHH': ['Presidency', 'Consulting', 'P&O'],
-          // Presidency, P&O
-          'C07H0G68M4Y': ['Presidency', 'P&O'],
+          // Presidency, Consulting, People & Organisation
+          'C097UCTLNHH': ['Presidency', 'Consulting', 'People & Organisation'],
+          // Presidency, People & Organisation
+          'C07H0G68M4Y': ['Presidency', 'People & Organisation'],
           // Presidency, Business Development, Consulting
           'C08UWD5GV6G': ['Presidency', 'Business Development', 'Consulting']
         },

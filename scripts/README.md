@@ -43,8 +43,8 @@ The `slack-channels-sync.js` script:
 
 - **Executive Channels**: Members where Department ≠ "Consultants" AND Status = "Active"
 - **Department-Specific Channels**:
-  - `C097UCTLNHH`: Presidency, Consulting, P&O departments
-  - `C07H0G68M4Y`: Presidency, P&O departments  
+  - `C097UCTLNHH`: Presidency, Consulting, People & Organisation departments
+  - `C07H0G68M4Y`: Presidency, People & Organisation departments  
   - `C08UWD5GV6G`: Presidency, Business Development, Consulting departments
 - **Leadership Channel**: Executives + Project Leaders (Status = "Active")
 - **Actives Channel**: All members where Status = "Active"

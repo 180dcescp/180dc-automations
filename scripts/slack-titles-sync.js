@@ -602,7 +602,7 @@ class SlackTitlesSync {
   normalizeDeptForTitle(dept) {
     const clean = String(dept || '').replace(/^[-–—\s]+/, '').trim();
     if (!clean) return '';
-    if (/^p&o$/i.test(clean)) return 'P&O';
+    if (/^p&o$/i.test(clean)) return 'People & Organisation';
     if (/^pvp$|^p-vp$/i.test(clean)) return 'P-VP';
     return this.toTitleCase(clean);
   }

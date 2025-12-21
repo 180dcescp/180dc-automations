@@ -61,7 +61,7 @@ class TeamMemberSync {
     this.validDepartments = [
       'Presidency',
       'Business Development',
-      'P&O',
+      'People & Organisation',
       'Marketing', 
       'Finance',
       'Events',
