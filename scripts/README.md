@@ -9,7 +9,7 @@ Automation scripts for syncing data across services and generating reports.
 - `slack-titles-sync.js` — Update Slack display names/titles
 - `notion-member-sync.js` — Sync members to Notion database
 - `notion-client-sync.js` — Sync client data to Notion
-- `sync-team-members.js` — Aggregate member sync workflow
+- `sync-team-members.js` — Aggregate member sync workflow (prefers "Full Name" from Member Database Google Sheet when available)
 - `sync-clients.js` — Aggregate client sync workflow
 - `weekly-analytics-report.js` — Weekly analytics summary
  
@@ -25,7 +25,7 @@ Set environment variables via `.env` at the repository root when running locally
 
 ## Required environment variables
 
-- Google: `GOOGLE_PROJECT_ID`, `GOOGLE_PRIVATE_KEY_ID`, `GOOGLE_PRIVATE_KEY`, `GOOGLE_CLIENT_EMAIL`, `GOOGLE_CLIENT_ID`
+- Google: `GSHEET_MEMBERS_LINK`, `GOOGLE_PROJECT_ID`, `GOOGLE_PRIVATE_KEY_ID`, `GOOGLE_PRIVATE_KEY`, `GOOGLE_CLIENT_EMAIL`, `GOOGLE_CLIENT_ID`
 - Notion: `NOTION_TOKEN`
 - Slack: `SLACK_BOT_TOKEN` (User Token), `SLACK_CHANNEL`
 - Optional: `GOOGLE_ANALYTICS_ID`, Sanity tokens where relevant
@@ -75,5 +75,4 @@ node scripts/slack-channels-sync.js
 - Check that the user token owner is a member of all target channels
 - Ensure Google Sheets access is properly configured
 - Review logs for specific API errors
-
 

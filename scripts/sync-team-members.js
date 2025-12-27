@@ -14,6 +14,7 @@
 
 import { createClient } from '@sanity/client';
 import { WebClient } from '@slack/web-api';
+import { google } from 'googleapis';
 import sharp from 'sharp';
 import dotenv from 'dotenv';
 import AVIFConverter from '../tools/avif-converter.js';
@@ -43,6 +44,16 @@ class TeamMemberSync {
     this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
     this.slackChannel = process.env.SLACK_CHANNEL || '#automation-updates';
     this.slackEnabled = !!(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL);
+
+    // Optional Google Sheets config (for overriding names)
+    this.googleSheetsConfig = {
+      sheetName: 'Member Database',
+      fullNameColumn: 'Full Name',
+      emailColumn: 'Email 180'
+    };
+    this.googleSheetsReady = this.hasGoogleSheetsConfig(false);
+    this.sheets = null;
+    this.sheetsId = this.googleSheetsReady ? this.extractSheetId(process.env.GSHEET_MEMBERS_LINK) : null;
     
     // Initialize AVIF converter
     this.avifConverter = new AVIFConverter();
@@ -68,6 +79,179 @@ class TeamMemberSync {
       'Consulting',
       'Consultants'
     ];
+  }
+
+  /**
+   * Check if Google Sheets environment variables are available
+   */
+  hasGoogleSheetsConfig(logWarnings = true) {
+    const required = [
+      'GSHEET_MEMBERS_LINK',
+      'GOOGLE_PROJECT_ID',
+      'GOOGLE_PRIVATE_KEY_ID',
+      'GOOGLE_PRIVATE_KEY',
+      'GOOGLE_CLIENT_EMAIL',
+      'GOOGLE_CLIENT_ID'
+    ];
+
+    const missing = required.filter(key => !process.env[key]);
+    
+    if (missing.length > 0) {
+      if (logWarnings) {
+        console.log(`ℹ️ Skipping Google Sheets name override - missing env vars: ${missing.join(', ')}`);
+      }
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Extract Google Sheet ID from URL
+   */
+  extractSheetId(url) {
+    if (!url) {
+      return null;
+    }
+
+    const patterns = [
+      /\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/,
+      /\/d\/([a-zA-Z0-9-_]+)/,
+      /id=([a-zA-Z0-9-_]+)/
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+
+    console.warn('⚠️ Could not extract Google Sheet ID from GSHEET_MEMBERS_LINK');
+    return null;
+  }
+
+  /**
+   * Initialize Google Sheets client (lazy)
+   */
+  async initializeSheets() {
+    if (this.sheets) return;
+
+    if (!this.googleSheetsReady || !this.sheetsId) {
+      throw new Error('Google Sheets configuration is incomplete');
+    }
+
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        type: 'service_account',
+        project_id: process.env.GOOGLE_PROJECT_ID,
+        private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+        token_uri: 'https://oauth2.googleapis.com/token',
+        auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
+        client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${process.env.GOOGLE_CLIENT_EMAIL}`
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+    });
+
+    this.sheets = google.sheets({ version: 'v4', auth });
+    console.log('✅ Google Sheets API initialized for name overrides');
+  }
+
+  /**
+   * Load a map of email -> full name from Google Sheets
+   */
+  async getFullNameMapFromSheet() {
+    if (!this.googleSheetsReady) {
+      console.log('ℹ️ Google Sheets config missing - using Slack names only');
+      return null;
+    }
+
+    if (!this.sheetsId) {
+      console.warn('⚠️ Google Sheets ID missing - using Slack names only');
+      return null;
+    }
+
+    try {
+      await this.initializeSheets();
+
+      const spreadsheet = await this.sheets.spreadsheets.get({
+        spreadsheetId: this.sheetsId
+      });
+      
+      const sheets = spreadsheet.data.sheets || [];
+      const targetSheet = sheets.find(sheet => 
+        sheet.properties?.title?.toLowerCase() === this.googleSheetsConfig.sheetName.toLowerCase()
+      );
+      
+      if (!targetSheet) {
+        console.warn(`⚠️ Sheet "${this.googleSheetsConfig.sheetName}" not found - using Slack names only`);
+        return null;
+      }
+
+      const actualSheetName = targetSheet.properties.title;
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.sheetsId,
+        range: `${actualSheetName}!A:Z`
+      });
+
+      const values = response.data.values;
+      if (!values || values.length < 2) {
+        console.warn('⚠️ No rows found in member sheet - using Slack names only');
+        return null;
+      }
+
+      const headers = values[0].map(h => h?.toString().trim() || '');
+      const normalizedHeaders = headers.map(h => h.toLowerCase());
+      const dataRows = values.slice(1);
+
+      const nameNeedle = this.googleSheetsConfig.fullNameColumn.toLowerCase();
+      const emailNeedle = this.googleSheetsConfig.emailColumn.toLowerCase();
+
+      const nameIdx = normalizedHeaders.findIndex(h => h === nameNeedle || h.includes(nameNeedle));
+      let emailIdx = normalizedHeaders.findIndex(h => h === emailNeedle || h.includes(emailNeedle));
+      if (emailIdx === -1) {
+        emailIdx = normalizedHeaders.findIndex(h => h === 'email' || h.includes('email'));
+      }
+
+      if (nameIdx === -1 || emailIdx === -1) {
+        console.warn('⚠️ Could not find "Full Name" or "Email" columns in sheet - using Slack names only');
+        return null;
+      }
+
+      const fullNameMap = new Map();
+      for (const row of dataRows) {
+        const email = (row[emailIdx] || '').toString().trim().toLowerCase();
+        const fullName = (row[nameIdx] || '').toString().trim();
+
+        if (!email || !fullName) continue;
+        fullNameMap.set(email, fullName);
+      }
+
+      if (fullNameMap.size === 0) {
+        console.warn('⚠️ No usable full names found in sheet - using Slack names only');
+        return null;
+      }
+
+      console.log(`✅ Loaded ${fullNameMap.size} full names from Google Sheets`);
+      return fullNameMap;
+    } catch (error) {
+      console.error('❌ Error loading full names from Google Sheets:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Decide which name to use for a member (prefers GSheet full name)
+   */
+  getPreferredName(profile, member, fullNameMap) {
+    const emailKey = (profile?.email || '').toString().trim().toLowerCase();
+    const sheetName = emailKey && fullNameMap ? fullNameMap.get(emailKey) : null;
+    const fallbackName = profile.real_name || profile.display_name || member.name || '';
+    return (sheetName || fallbackName || '').toString().trim();
   }
 
   /**
@@ -411,6 +595,9 @@ class TeamMemberSync {
         return [];
       }
 
+      // Load full names from Google Sheets (optional override)
+      const fullNameMap = await this.getFullNameMapFromSheet();
+
       // Filter out bots and deleted users
       const activeMembers = result.members.filter(member => 
         !member.deleted && 
@@ -426,15 +613,16 @@ class TeamMemberSync {
       const allMembers = await Promise.all(activeMembers.map(async member => {
         const profile = member.profile;
         const { position, department, isAlumni } = this.parseTitle(profile.title);
+        const preferredName = this.getPreferredName(profile, member, fullNameMap);
         
         // Get the best available profile image
         const profileImage = profile.image_512 || profile.image_192 || profile.image_72;
         
         // Check if it's a default avatar (now async)
-        const avatarResult = await this.isDefaultSlackAvatar(profileImage, profile.real_name || profile.display_name || member.name);
+        const avatarResult = await this.isDefaultSlackAvatar(profileImage, preferredName);
         
         return {
-          name: profile.real_name || profile.display_name || member.name,
+          name: preferredName,
           email: profile.email,
           position: position,
           department: department,
